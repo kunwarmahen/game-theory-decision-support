@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Theory Decision Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#8B5CF6',
+                        accent: '#10B981',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+            animation: fadeIn 0.5s ease-out;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="gradient-bg text-white shadow-lg">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold">Game Theory Decision Analyzer</h1>
+                    <p class="text-blue-100 mt-1">Make strategic decisions with confidence</p>
+                </div>
+                <div class="hidden md:flex items-center space-x-4">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-6xl mx-auto">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Main Input Card -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl shadow-lg p-6 animate-fadeIn">
+                        <h2 class="text-2xl font-semibold text-gray-800 mb-4 flex items-center">
+                            <svg class="w-6 h-6 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Describe Your Situation
+                        </h2>
+                        <textarea
+                            id="query"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition duration-200 resize-none"
+                            rows="8"
+                            placeholder="Example: I'm negotiating a salary for a new job offer. The company initially offered $80,000 but I believe the market rate is $95,000. I have competing offers and strong performance reviews. How should I approach this negotiation?"
+                        ></textarea>
+                    </div>
+                </div>
+
+                <!-- Settings Card -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-xl shadow-lg p-6 animate-fadeIn">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            Model Settings
+                        </h3>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">LLM Model</label>
+                                <select id="model_name" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition duration-200">
+                                    <option value="llama3">Llama 3</option>
+                                    <option value="llama3.1">Llama 3.1</option>
+                                    <option value="llama3.2">Llama 3.2</option>
+                                    <option value="mistral">Mistral</option>
+                                    <option value="mixtral">Mixtral</option>
+                                    <option value="gemma">Gemma</option>
+                                    <option value="gemma2">Gemma 2</option>
+                                    <option value="qwen">Qwen</option>
+                                    <option value="qwen2.5">Qwen 2.5</option>
+                                    <option value="phi">Phi</option>
+                                    <option value="custom">Custom...</option>
+                                </select>
+                            </div>
+
+                            <div id="custom-model" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Custom Model Name</label>
+                                <input
+                                    type="text"
+                                    id="custom_model_name"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition duration-200"
+                                    placeholder="e.g., llama3:8b"
+                                >
+                            </div>
+
+                            <div>
+                                <button
+                                    id="toggle-advanced"
+                                    class="text-sm text-primary hover:text-blue-700 font-medium flex items-center transition duration-200"
+                                >
+                                    <svg id="advanced-arrow" class="w-4 h-4 mr-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                    Advanced Settings
+                                </button>
+                            </div>
+
+                            <div id="advanced-settings" class="hidden space-y-3 pt-2 border-t border-gray-200">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Ollama URL</label>
+                                    <input
+                                        type="text"
+                                        id="ollama_url"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition duration-200"
+                                        value="http://localhost:11434"
+                                    >
+                                    <p class="text-xs text-gray-500 mt-1">Default port: 11434</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analyze Button -->
+            <div class="mt-6 text-center">
+                <button
+                    id="analyze-btn"
+                    class="bg-gradient-to-r from-primary to-secondary text-white px-8 py-4 rounded-lg text-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-200 flex items-center justify-center mx-auto"
+                >
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    Analyze Situation
+                </button>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loading" class="hidden mt-8">
+                <div class="bg-white rounded-xl shadow-lg p-8 text-center animate-fadeIn">
+                    <div class="inline-block animate-spin rounded-full h-16 w-16 border-4 border-primary border-t-transparent"></div>
+                    <p class="mt-4 text-lg text-gray-700 font-medium">Analyzing your situation using game theory principles...</p>
+                    <p class="mt-2 text-sm text-gray-500">This may take 10-30 seconds depending on your model</p>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results" class="hidden mt-8 space-y-6 animate-fadeIn">
+                <!-- Summary Card -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Situation Summary
+                    </h2>
+                    <p id="summary" class="text-gray-700 leading-relaxed"></p>
+                </div>
+
+                <!-- Stakeholders and Recommendation Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Stakeholders Card -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                            Key Stakeholders
+                        </h3>
+                        <ul id="stakeholders" class="space-y-2"></ul>
+                    </div>
+
+                    <!-- Recommendation Card -->
+                    <div class="bg-gradient-to-br from-accent to-emerald-600 rounded-xl shadow-lg p-6 text-white">
+                        <h3 class="text-xl font-bold mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Recommended Approach
+                        </h3>
+                        <p id="recommended" class="leading-relaxed"></p>
+                    </div>
+                </div>
+
+                <!-- Outcomes Section -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        Possible Outcomes
+                    </h2>
+                    <div id="outcomes" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+                </div>
+
+                <!-- Decision Tree Section -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                        Decision Tree Visualization
+                    </h2>
+                    <div class="bg-gray-50 rounded-lg p-4 flex justify-center">
+                        <img id="decision-tree" class="max-w-full h-auto rounded-lg shadow-md" alt="Decision Tree">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="mt-12 bg-gray-800 text-gray-300 py-6">
+        <div class="container mx-auto px-4 text-center">
+            <p>Game Theory Decision Analyzer - Make data-driven strategic decisions</p>
+            <p class="text-sm text-gray-400 mt-2">Powered by Advanced AI Models</p>
+        </div>
+    </footer>
+
+    <script>
+        // Toggle advanced settings
+        document.getElementById('toggle-advanced').addEventListener('click', () => {
+            const advancedSettings = document.getElementById('advanced-settings');
+            const arrow = document.getElementById('advanced-arrow');
+            const isHidden = advancedSettings.classList.contains('hidden');
+
+            if (isHidden) {
+                advancedSettings.classList.remove('hidden');
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                advancedSettings.classList.add('hidden');
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        });
+
+        // Handle custom model selection
+        document.getElementById('model_name').addEventListener('change', function() {
+            const customModelDiv = document.getElementById('custom-model');
+            if (this.value === 'custom') {
+                customModelDiv.classList.remove('hidden');
+            } else {
+                customModelDiv.classList.add('hidden');
+            }
+        });
+
+        // Main analyze function
+        document.getElementById('analyze-btn').addEventListener('click', async () => {
+            const query = document.getElementById('query').value.trim();
+            const modelSelect = document.getElementById('model_name');
+            let modelName = modelSelect.value;
+
+            // Handle custom model name
+            if (modelName === 'custom') {
+                const customModel = document.getElementById('custom_model_name').value.trim();
+                if (!customModel) {
+                    alert('Please enter a custom model name.');
+                    return;
+                }
+                modelName = customModel;
+            }
+
+            const ollamaUrl = document.getElementById('ollama_url').value.trim();
+
+            if (!query) {
+                alert('Please describe your situation.');
+                return;
+            }
+
+            if (!ollamaUrl) {
+                alert('Please enter the Ollama URL.');
+                return;
+            }
+
+            // Show loading indicator
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('results').classList.add('hidden');
+            document.getElementById('analyze-btn').disabled = true;
+            document.getElementById('analyze-btn').classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        ollama_url: ollamaUrl,
+                        model_name: modelName
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'An error occurred during analysis.');
+                }
+
+                const data = await response.json();
+                displayResults(data);
+
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('analyze-btn').disabled = false;
+                document.getElementById('analyze-btn').classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+
+        function displayResults(data) {
+            // Update summary
+            document.getElementById('summary').textContent = data.summary;
+
+            // Update stakeholders
+            const stakeholdersEl = document.getElementById('stakeholders');
+            stakeholdersEl.innerHTML = '';
+            data.stakeholders.forEach(stakeholder => {
+                const li = document.createElement('li');
+                li.className = 'flex items-center text-gray-700';
+                li.innerHTML = `
+                    <svg class="w-4 h-4 mr-2 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                    </svg>
+                    ${stakeholder}
+                `;
+                stakeholdersEl.appendChild(li);
+            });
+
+            // Update recommendation
+            document.getElementById('recommended').textContent = data.recommended_outcome;
+
+            // Sort outcomes by probability
+            const sortedOutcomes = [...data.outcomes].sort((a, b) => b.probability - a.probability);
+
+            // Update outcomes
+            const outcomesEl = document.getElementById('outcomes');
+            outcomesEl.innerHTML = '';
+
+            sortedOutcomes.forEach((outcome, index) => {
+                const card = document.createElement('div');
+                card.className = 'bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-6 border border-gray-200 hover:shadow-lg transition duration-200';
+
+                const probabilityPercent = (outcome.probability * 100).toFixed(1);
+                const color = getColorForProbability(outcome.probability);
+
+                card.innerHTML = `
+                    <div class="flex items-start justify-between mb-3">
+                        <h4 class="text-lg font-semibold text-gray-800 flex-1">${outcome.description}</h4>
+                        <span class="ml-2 px-3 py-1 rounded-full text-sm font-bold text-white flex-shrink-0" style="background-color: ${color}">
+                            ${probabilityPercent}%
+                        </span>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                            <div class="h-3 rounded-full transition-all duration-500"
+                                 style="width: ${probabilityPercent}%; background-color: ${color}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <p class="text-sm font-semibold text-gray-700 mb-2">Key Factors:</p>
+                        <ul class="space-y-1">
+                            ${outcome.key_factors.map(factor => `
+                                <li class="text-sm text-gray-600 flex items-start">
+                                    <svg class="w-4 h-4 mr-2 mt-0.5 text-primary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                                    </svg>
+                                    ${factor}
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+
+                    <div class="border-t border-gray-300 pt-3">
+                        <p class="text-sm font-semibold text-gray-700 mb-1">Recommendation:</p>
+                        <p class="text-sm text-gray-600">${outcome.recommendation}</p>
+                    </div>
+                `;
+
+                outcomesEl.appendChild(card);
+            });
+
+            // Set decision tree image
+            if (data.decision_tree_image) {
+                document.getElementById('decision-tree').src = `data:image/png;base64,${data.decision_tree_image}`;
+            }
+
+            // Show results
+            document.getElementById('results').classList.remove('hidden');
+
+            // Smooth scroll to results
+            setTimeout(() => {
+                document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        }
+
+        function getColorForProbability(probability) {
+            // Color gradient from red (low) to yellow (medium) to green (high)
+            if (probability < 0.33) {
+                const r = 239;
+                const g = Math.round(68 + (probability / 0.33) * 100);
+                const b = 68;
+                return `rgb(${r}, ${g}, ${b})`;
+            } else if (probability < 0.66) {
+                const r = Math.round(239 - ((probability - 0.33) / 0.33) * 100);
+                const g = 168;
+                const b = 68;
+                return `rgb(${r}, ${g}, ${b})`;
+            } else {
+                const r = Math.round(139 - ((probability - 0.66) / 0.34) * 100);
+                const g = Math.round(168 + ((probability - 0.66) / 0.34) * 27);
+                const b = 68;
+                return `rgb(${r}, ${g}, ${b})`;
+            }
+        }
+
+        // Add enter key support for textarea
+        document.getElementById('query').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                document.getElementById('analyze-btn').click();
+            }
+        });
+    </script>
+</body>
+</html>

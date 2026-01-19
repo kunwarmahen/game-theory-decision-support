@@ -1,0 +1,25 @@
+[Unit]
+Description=Game Theory Decision Analyzer
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/game-theory-analyzer
+Environment="PATH=/opt/game-theory-analyzer/venv/bin"
+EnvironmentFile=/opt/game-theory-analyzer/.env
+ExecStart=/opt/game-theory-analyzer/venv/bin/python app.py
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=append:/var/log/game-theory-analyzer/access.log
+StandardError=append:/var/log/game-theory-analyzer/error.log
+
+[Install]
+WantedBy=multi-user.target
