@@ -2,9 +2,18 @@
 
 A professional web application that uses advanced AI models and game theory principles to analyze strategic situations and provide data-driven decision support.
 
+## Two Versions Available
+
+This application comes in **two versions**:
+
+1. **Ollama Version** (`app.py`) - Uses local LLM models via Ollama (free, runs locally)
+2. **OpenAI Version** (`app_oai.py`) - Uses OpenAI API (requires API key, cloud-based)
+
+Both versions provide the same professional interface and features.
+
 ## Features
 
-- **AI-Powered Analysis**: Leverages local LLM models via Ollama for intelligent strategic analysis
+- **AI-Powered Analysis**: Leverages local LLM models (Ollama) or OpenAI API for intelligent strategic analysis
 - **Game Theory Principles**: Applies Nash Equilibrium, Expected Value Theory, and Strategic Decision Making
 - **Interactive Decision Trees**: Visual representation of decision paths and outcomes
 - **Probability Analysis**: Automatic normalization ensuring probabilities sum to 100% at each level
@@ -24,19 +33,49 @@ The application features:
 
 - **Backend**: FastAPI (Python)
 - **Frontend**: HTML5, Tailwind CSS, Vanilla JavaScript
-- **AI/LLM**: Ollama (supports Llama 3, Mistral, Mixtral, Gemma, Qwen, and more)
+- **AI/LLM**:
+  - Ollama (local models: Llama 3, Mistral, Mixtral, Gemma, Qwen, and more)
+  - OpenAI API (GPT-4, GPT-4 Turbo, GPT-4o, etc.)
 - **Visualization**: Matplotlib, NetworkX, Graphviz
 - **Deployment**: systemd service, Nginx reverse proxy (optional)
+
+## Which Version Should You Use?
+
+### Use Ollama Version (`app.py`) if:
+- ✅ You want to run everything **locally** and **free**
+- ✅ You care about **privacy** (no data sent to external services)
+- ✅ You have a decent machine with **8GB+ RAM**
+- ✅ You're okay with slightly **slower response times** (10-30 seconds)
+- ✅ You want to experiment with **different open-source models**
+
+### Use OpenAI Version (`app_oai.py`) if:
+- ✅ You want the **fastest and most accurate** results
+- ✅ You have an **OpenAI API key** and budget for API calls
+- ✅ You prefer **cloud-based** solutions
+- ✅ You need **production-grade reliability**
+- ✅ Response time is critical (typically **2-5 seconds**)
+
+**Cost Comparison:**
+- **Ollama**: $0 (free, runs on your hardware)
+- **OpenAI GPT-4**: ~$0.03-0.06 per analysis (varies by model and response length)
 
 ## Quick Start
 
 ### Prerequisites
 
+**For Ollama Version:**
 - Python 3.8+
 - Ollama installed and running
 - graphviz system package
 
+**For OpenAI Version:**
+- Python 3.8+
+- OpenAI API key
+- graphviz system package
+
 ### Local Development
+
+#### Option 1: Ollama Version (Free, Local)
 
 1. **Clone or navigate to the repository**
 
@@ -80,7 +119,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3
 ```
 
-7. **Run the application**
+7. **Run the Ollama version**
 
 ```bash
 python app.py
@@ -90,14 +129,36 @@ python app.py
 
 Open your browser and navigate to: `http://localhost:8000`
 
+#### Option 2: OpenAI Version (API-based)
+
+Follow steps 1-5 above, then:
+
+6. **Get an OpenAI API key**
+   - Sign up at https://platform.openai.com
+   - Create an API key in your account settings
+
+7. **Run the OpenAI version**
+
+```bash
+python app_oai.py
+```
+
+8. **Access the application**
+
+Open your browser and navigate to: `http://localhost:8001`
+
+**Note:** The OpenAI version runs on port 8001 by default (different from Ollama version on 8000), so you can run both simultaneously if desired.
+
 ## Usage
+
+### Ollama Version (app.py)
 
 1. **Describe Your Situation**: Enter a strategic situation or dilemma in the text area
    - Example: "I'm negotiating a salary for a new job offer. The company offered $80,000 but market rate is $95,000. How should I approach this?"
 
 2. **Select Model**: Choose your preferred LLM model from the dropdown
    - Default: Llama 3
-   - Supports: Mistral, Mixtral, Gemma, Qwen, custom models
+   - Supports: Llama 3.x, Mistral, Mixtral, Gemma, Qwen, custom models
 
 3. **Configure Settings** (Optional):
    - Click "Advanced Settings" to modify Ollama URL
@@ -110,6 +171,22 @@ Open your browser and navigate to: `http://localhost:8000`
    - Recommended approach
    - Possible outcomes with probabilities (automatically normalized to 100%)
    - Interactive decision tree visualization
+
+### OpenAI Version (app_oai.py)
+
+1. **Describe Your Situation**: Same as above
+
+2. **Enter API Key**: Provide your OpenAI API key
+   - Your key is not stored and only used for this request
+   - Get a key at: https://platform.openai.com
+
+3. **Select Model**: Choose your preferred OpenAI model
+   - Default: GPT-4 (recommended for best results)
+   - Also supports: GPT-4 Turbo, GPT-4o, GPT-4o Mini, GPT-3.5 Turbo
+
+4. **Analyze**: Click the "Analyze Situation" button
+
+5. **Review Results**: Same comprehensive analysis as Ollama version
 
 ## Configuration
 

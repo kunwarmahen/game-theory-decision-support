@@ -15,6 +15,9 @@ networkx==3.2.1
 # HTTP Client
 requests==2.31.0
 
+# AI/LLM APIs
+openai==1.10.0
+
 # Graph Visualization
 pygraphviz==1.11
 
