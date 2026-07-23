@@ -1,368 +1,187 @@
 # Game Theory Decision Analyzer
 
-A professional web application that uses advanced AI models and game theory principles to analyze strategic situations and provide data-driven decision support.
+A web application that analyzes strategic situations with game-theory principles and
+local or cloud LLMs. It returns stakeholders, weighted outcomes, an interactive
+decision tree whose **expected values are computed deterministically by backward
+induction**, and — for simultaneous games — a **payoff matrix with Nash equilibria
+solved in code**. The app calculates the optimal strategy rather than asking the model
+to guess it.
 
-## Two Versions Available
+Runs fully locally with **Gemma via Ollama** by default (private, free), with an
+optional OpenAI provider.
 
-This application comes in **two versions**:
+## Highlights
 
-1. **Ollama Version** (`app.py`) - Uses local LLM models via Ollama (free, runs locally)
-2. **OpenAI Version** (`app_oai.py`) - Uses OpenAI API (requires API key, cloud-based)
+- **One app, pluggable providers** — local models (Gemma/Ollama) and OpenAI behind a
+  single provider layer (`providers.py`). No more duplicated app files.
+- **Reliable JSON via structured outputs** — the LLM is *constrained* to a JSON schema
+  (Ollama `format` / OpenAI `response_format`), then validated with Pydantic. No fragile
+  string scraping.
+- **Real backward induction** — chance nodes are expected-value-weighted, decision nodes
+  maximize, and the EV-optimal path is highlighted (`game_theory.py`).
+- **Payoff matrix + Nash equilibria** — when the situation is a simultaneous two-player
+  game, the model produces a normal-form payoff matrix and the server computes the
+  equilibria: **pure-strategy** NE for any nxm game plus the **mixed-strategy** NE for
+  2x2 games. Equilibrium cells are highlighted in the matrix.
+- **Interactive decision tree** — rendered in the browser with vis-network (color-coded
+  node types, probability edge labels, per-node EV, optimal path). No server-side image
+  generation, so `matplotlib`/`networkx`/`graphviz` are no longer needed.
+- **Model dropdown** — auto-populated from your locally installed Ollama models.
 
-Both versions provide the same professional interface and features.
+## Architecture
 
-## Features
-
-- **AI-Powered Analysis**: Leverages local LLM models (Ollama) or OpenAI API for intelligent strategic analysis
-- **Game Theory Principles**: Applies Nash Equilibrium, Expected Value Theory, and Strategic Decision Making
-- **Interactive Decision Trees**: Visual representation of decision paths and outcomes
-- **Probability Analysis**: Automatic normalization ensuring probabilities sum to 100% at each level
-- **Professional UI**: Modern, responsive design built with Tailwind CSS
-- **Production-Ready**: Complete with logging, error handling, and deployment configurations
-
-## Screenshots
-
-The application features:
-- Clean, modern interface with gradient headers
-- Interactive decision tree visualizations
-- Color-coded probability indicators
-- Stakeholder and recommendation analysis
-- Detailed outcome breakdowns with key factors
-
-## Technology Stack
-
-- **Backend**: FastAPI (Python)
-- **Frontend**: HTML5, Tailwind CSS, Vanilla JavaScript
-- **AI/LLM**:
-  - Ollama (local models: Llama 3, Mistral, Mixtral, Gemma, Qwen, and more)
-  - OpenAI API (GPT-4, GPT-4 Turbo, GPT-4o, etc.)
-- **Visualization**: Matplotlib, NetworkX, Graphviz
-- **Deployment**: systemd service, Nginx reverse proxy (optional)
-
-## Which Version Should You Use?
-
-### Use Ollama Version (`app.py`) if:
-- ✅ You want to run everything **locally** and **free**
-- ✅ You care about **privacy** (no data sent to external services)
-- ✅ You have a decent machine with **8GB+ RAM**
-- ✅ You're okay with slightly **slower response times** (10-30 seconds)
-- ✅ You want to experiment with **different open-source models**
-
-### Use OpenAI Version (`app_oai.py`) if:
-- ✅ You want the **fastest and most accurate** results
-- ✅ You have an **OpenAI API key** and budget for API calls
-- ✅ You prefer **cloud-based** solutions
-- ✅ You need **production-grade reliability**
-- ✅ Response time is critical (typically **2-5 seconds**)
-
-**Cost Comparison:**
-- **Ollama**: $0 (free, runs on your hardware)
-- **OpenAI GPT-4**: ~$0.03-0.06 per analysis (varies by model and response length)
+```
+app.py          FastAPI endpoints (/, /api/models, /api/analyze)
+models.py       Pydantic schemas — single source of truth for the JSON contract
+prompts.py      System + analysis prompt
+providers.py    LLMProvider base + OllamaProvider + OpenAIProvider + model listing
+game_theory.py  Probability normalization, backward-induction EV, Nash equilibria
+config.py       Settings (provider/model defaults, from .env)
+templates/
+  index.html    Single-page UI (provider toggle, model dropdown, interactive tree)
+```
 
 ## Quick Start
 
 ### Prerequisites
-
-**For Ollama Version:**
 - Python 3.8+
-- Ollama installed and running
-- graphviz system package
+- [Ollama](https://ollama.com) installed and running, with at least one chat model:
+  ```bash
+  ollama pull gemma4:12b   # or any Gemma / Qwen / Llama chat model you prefer
+  ```
 
-**For OpenAI Version:**
-- Python 3.8+
-- OpenAI API key
-- graphviz system package
-
-### Local Development
-
-#### Option 1: Ollama Version (Free, Local)
-
-1. **Clone or navigate to the repository**
-
+### Run
 ```bash
 cd /home/mahen/Documents/ai/game_theory/decision_support
-```
-
-2. **Install system dependencies** (Ubuntu/Debian)
-
-```bash
-sudo apt install -y graphviz libgraphviz-dev pkg-config
-```
-
-3. **Create virtual environment**
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-4. **Install Python dependencies**
-
-```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+cp .env.example .env      # optional — edit defaults
+python app.py             # serves on http://localhost:8000
 ```
 
-5. **Configure environment** (optional)
+Open `http://localhost:8000`, describe your situation, pick a model, and click **Analyze**.
 
-```bash
-cp .env.example .env
-# Edit .env with your preferred settings
-```
+> Local models can take ~30–90s per analysis depending on model size and hardware. The
+> smaller Gemma variants (e.g. `e4b`) are noticeably faster than the larger ones.
 
-6. **Install and start Ollama**
-
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull a model
-ollama pull llama3
-```
-
-7. **Run the Ollama version**
-
-```bash
-python app.py
-```
-
-8. **Access the application**
-
-Open your browser and navigate to: `http://localhost:8000`
-
-#### Option 2: OpenAI Version (API-based)
-
-Follow steps 1-5 above, then:
-
-6. **Get an OpenAI API key**
-   - Sign up at https://platform.openai.com
-   - Create an API key in your account settings
-
-7. **Run the OpenAI version**
-
-```bash
-python app_oai.py
-```
-
-8. **Access the application**
-
-Open your browser and navigate to: `http://localhost:8001`
-
-**Note:** The OpenAI version runs on port 8001 by default (different from Ollama version on 8000), so you can run both simultaneously if desired.
-
-## Usage
-
-### Ollama Version (app.py)
-
-1. **Describe Your Situation**: Enter a strategic situation or dilemma in the text area
-   - Example: "I'm negotiating a salary for a new job offer. The company offered $80,000 but market rate is $95,000. How should I approach this?"
-
-2. **Select Model**: Choose your preferred LLM model from the dropdown
-   - Default: Llama 3
-   - Supports: Llama 3.x, Mistral, Mixtral, Gemma, Qwen, custom models
-
-3. **Configure Settings** (Optional):
-   - Click "Advanced Settings" to modify Ollama URL
-   - Default: http://localhost:11434
-
-4. **Analyze**: Click the "Analyze Situation" button
-
-5. **Review Results**:
-   - Situation summary and stakeholder analysis
-   - Recommended approach
-   - Possible outcomes with probabilities (automatically normalized to 100%)
-   - Interactive decision tree visualization
-
-### OpenAI Version (app_oai.py)
-
-1. **Describe Your Situation**: Same as above
-
-2. **Enter API Key**: Provide your OpenAI API key
-   - Your key is not stored and only used for this request
-   - Get a key at: https://platform.openai.com
-
-3. **Select Model**: Choose your preferred OpenAI model
-   - Default: GPT-4 (recommended for best results)
-   - Also supports: GPT-4 Turbo, GPT-4o, GPT-4o Mini, GPT-3.5 Turbo
-
-4. **Analyze**: Click the "Analyze Situation" button
-
-5. **Review Results**: Same comprehensive analysis as Ollama version
-
-## Configuration
-
-Configuration is managed through environment variables (`.env` file):
+## Configuration (`.env`)
 
 ```ini
-# Application Settings
-APP_NAME="Game Theory Decision Analyzer"
 APP_HOST=0.0.0.0
 APP_PORT=8000
-APP_RELOAD=false
-DEBUG=false
 
-# Ollama Default Settings
+# Provider: "ollama" (local Gemma) or "openai"
+DEFAULT_PROVIDER=ollama
+
+# Ollama
 DEFAULT_OLLAMA_URL=http://localhost:11434
-DEFAULT_MODEL_NAME=llama3
+DEFAULT_MODEL_NAME=gemma4:12b
 
-# Logging
+# OpenAI (optional — leave blank to disable). Read from the server env; never sent
+# from the browser.
+OPENAI_API_KEY=
+DEFAULT_OPENAI_MODEL=gpt-4o
+
+TEMPERATURE=0.2
 LOG_LEVEL=INFO
-LOG_FILE=app.log
-
-# CORS Settings
 CORS_ORIGINS=*
 ```
 
-## Production Deployment
+## API
 
-For production deployment on a traditional Linux server, see [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive instructions including:
+Interactive docs at `http://localhost:8000/docs`.
 
-- systemd service configuration
-- Nginx reverse proxy setup
-- SSL/HTTPS configuration
-- Firewall configuration
-- Monitoring and logging
-- Backup procedures
-
-## API Documentation
-
-Once running, visit `http://localhost:8000/docs` for interactive API documentation (Swagger UI).
-
-### Main Endpoint
+**GET** `/api/models` — installed (chat-capable) Ollama models + provider availability.
 
 **POST** `/api/analyze`
-
-Request body:
 ```json
 {
-  "query": "Your strategic situation description",
-  "ollama_url": "http://localhost:11434",
-  "model_name": "llama3"
+  "query": "Your strategic situation",
+  "provider": "ollama",
+  "model_name": "gemma4:12b",
+  "ollama_url": "http://localhost:11434"
 }
 ```
-
-Response:
+Response (abridged):
 ```json
 {
-  "stakeholders": ["stakeholder1", "stakeholder2"],
-  "summary": "Analysis summary",
-  "outcomes": [
-    {
-      "description": "Outcome description",
-      "probability": 0.35,
-      "key_factors": ["factor1", "factor2"],
-      "recommendation": "Recommended action"
-    }
+  "stakeholders": ["..."],
+  "summary": "...",
+  "outcomes": [{"description": "...", "probability": 0.35, "key_factors": ["..."], "recommendation": "..."}],
+  "recommended_outcome": "...",
+  "decision_tree": [
+    {"id": "root", "label": "...", "type": "decision", "children": ["a","b"], "expected_value": 90.0, "is_optimal": true}
   ],
-  "recommended_outcome": "Most favorable outcome",
-  "decision_tree": [...],
-  "decision_tree_image": "base64_encoded_image"
+  "optimal_decision": "...",
+  "optimal_expected_value": 90.0,
+  "payoff_matrix": {
+    "applicable": true,
+    "player_row": "Chain A", "player_col": "Chain B",
+    "row_strategies": ["High Price", "Price War"],
+    "col_strategies": ["High Price", "Price War"],
+    "cells": [{"row_strategy": "High Price", "col_strategy": "High Price", "row_payoff": 80, "col_payoff": 80}]
+  },
+  "nash_equilibria": [
+    {"kind": "pure", "profile": "Price War / High Price", "row_payoff": 100, "col_payoff": 40, "description": "..."},
+    {"kind": "mixed", "profile": "Chain A: 33% High Price / 67% Price War | ...", "row_mix": [0.33, 0.67], "col_mix": [0.33, 0.67]}
+  ]
 }
 ```
 
-## Key Features Explained
+> `payoff_matrix` is `null` (and `nash_equilibria` empty) for one-sided decisions under
+> uncertainty — those are represented by the decision tree instead.
 
-### Probability Normalization
+## How the expected value is computed
 
-The application automatically normalizes probabilities to ensure:
-- All outcome probabilities sum to 100%
-- At each decision tree level, child node probabilities sum to 100%
-- Handles cases where the LLM provides incorrect probability distributions
+The LLM assigns **payoffs** to terminal outcome nodes and **probabilities** to chance
+branches. The server then walks the tree bottom-up (`game_theory.compute_expected_values`):
 
-### Decision Tree Types
+- **outcome (leaf):** value = payoff
+- **chance node:** value = Σ (child probability × child value)
+- **decision node:** value = max(child values); the maximizing branch is marked optimal
 
-- **Decision Nodes** (Blue): User-controlled choices
-- **Chance Nodes** (Green): Uncertain events with probabilities
-- **Outcome Nodes** (Salmon): Final results
+This yields a defensible expected value for every node and identifies the optimal
+strategy — independent of whatever the model "thinks" the best choice is.
 
-### Error Handling
+### Node types in the tree
+- **Decision** (blue box) — a choice the actor controls
+- **Chance** (amber diamond) — an uncertain event carrying a probability
+- **Outcome** (green ellipse) — a terminal result carrying a payoff
 
-Production-ready error handling includes:
-- Network connection errors (Ollama unavailable)
-- JSON parsing errors (invalid LLM responses)
-- Visualization failures (graceful degradation)
-- Comprehensive logging for debugging
+## Payoff matrix & Nash equilibria
 
-## Development
+For **simultaneous** strategic interactions (two players each choosing a discrete
+strategy at the same time — price wars, standoffs, negotiation as concede/hold, etc.),
+the model emits a normal-form payoff matrix and the server solves it in code
+(`game_theory.compute_nash_equilibria`):
 
-### Project Structure
+- **Pure-strategy NE** (any nxm game): a strategy profile where neither player can
+  improve by unilaterally deviating (mutual best response). These cells are highlighted
+  in the matrix table.
+- **Mixed-strategy NE** (2x2 games): the interior equilibrium where each player
+  randomizes to keep the other indifferent — essential for games with no pure NE
+  (e.g. Matching Pennies).
 
-```
-decision_support/
-├── app.py                          # Main application file
-├── config.py                       # Configuration management
-├── requirements.txt                # Python dependencies
-├── .env.example                    # Example environment variables
-├── templates/
-│   └── index.html                  # Frontend template
-├── game-theory-analyzer.service    # systemd service file
-├── DEPLOYMENT.md                   # Deployment guide
-└── README.md                       # This file
-```
+The model only builds the game; it never identifies the equilibrium itself. Verified
+against textbook games — Prisoner's Dilemma (pure), Matching Pennies (mixed 50/50), and
+Battle of the Sexes (two pure + one mixed).
 
-### Adding New Features
+**Scope:** the matrix and mixed-NE solver target two-player games (mixed NE specifically
+for 2x2). Pure-strategy NE works for any nxm matrix.
 
-The application is modular and extensible:
-- Add new LLM providers by extending `GameTheoryAnalyzer`
-- Customize the frontend in `templates/index.html`
-- Add new endpoints in `app.py`
-- Configure new settings in `config.py`
+## Production deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for systemd, Nginx reverse proxy, and TLS.
 
 ## Troubleshooting
 
-### Ollama Connection Error
-
-```bash
-# Check if Ollama is running
-sudo systemctl status ollama
-
-# Or start it manually
-ollama serve
-```
-
-### Graphviz/pygraphviz Issues
-
-```bash
-# Reinstall system dependencies
-sudo apt install -y graphviz libgraphviz-dev pkg-config
-
-# Reinstall Python package
-pip uninstall pygraphviz
-pip install pygraphviz --no-cache-dir
-```
-
-### Port Already in Use
-
-```bash
-# Find process using port 8000
-sudo lsof -i :8000
-
-# Kill the process or change APP_PORT in .env
-```
-
-## Contributing
-
-Contributions are welcome! Areas for improvement:
-- Additional visualization types
-- More LLM provider integrations
-- Enhanced UI/UX features
-- Additional game theory algorithms
-- Performance optimizations
-
-## License
-
-This project is provided as-is for educational and business use.
-
-## Support
-
-For issues, questions, or feature requests:
-1. Check the logs in `app.log`
-2. Review the [DEPLOYMENT.md](DEPLOYMENT.md) guide
-3. Consult Ollama documentation: https://ollama.com/docs
-4. Review FastAPI docs: https://fastapi.tiangolo.com/
+- **No models in the dropdown** — ensure Ollama is running (`ollama serve`) and the URL
+  in Settings matches; only chat-capable models are listed (embedding models are hidden).
+- **OpenAI option disabled** — set `OPENAI_API_KEY` in `.env` and restart.
+- **Port in use** — change `APP_PORT` in `.env`.
 
 ## Acknowledgments
 
-- Built with [FastAPI](https://fastapi.tiangolo.com/)
-- Styled with [Tailwind CSS](https://tailwindcss.com/)
-- Powered by [Ollama](https://ollama.com/)
-- Visualization with [NetworkX](https://networkx.org/) and [Matplotlib](https://matplotlib.org/)
+Built with [FastAPI](https://fastapi.tiangolo.com/), [Tailwind CSS](https://tailwindcss.com/),
+[vis-network](https://visjs.org/), and [Ollama](https://ollama.com/).

@@ -3,28 +3,37 @@ Application configuration using pydantic-settings for environment variable manag
 """
 from pydantic_settings import BaseSettings
 from typing import List
-import os
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    # Application Settings
+    # Application
     app_name: str = "Game Theory Decision Analyzer"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_reload: bool = False
     debug: bool = False
 
-    # Ollama Default Settings
+    # Provider defaults ("ollama" for local Gemma, or "openai")
+    default_provider: str = "ollama"
+
+    # Ollama (local models such as Gemma)
     default_ollama_url: str = "http://localhost:11434"
-    default_model_name: str = "llama3"
+    default_model_name: str = "gemma4:12b"
+
+    # OpenAI (optional; key read from env so it is never sent from the browser)
+    openai_api_key: str = ""
+    default_openai_model: str = "gpt-4o"
+
+    # Generation
+    temperature: float = 0.2
 
     # Logging
     log_level: str = "INFO"
     log_file: str = "app.log"
 
-    # CORS Settings
+    # CORS (comma-separated origins, or * for all)
     cors_origins: str = "*"
 
     class Config:
@@ -34,11 +43,9 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        """Parse CORS origins from comma-separated string."""
         if self.cors_origins == "*":
             return ["*"]
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
 
-# Global settings instance
 settings = Settings()

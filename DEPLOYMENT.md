@@ -8,8 +8,10 @@ This guide covers deploying the Game Theory Decision Analyzer on a traditional L
 - Python 3.8 or higher
 - Ollama installed and running (see [Ollama Installation](#ollama-installation))
 - sudo/root access
-- At least 2GB RAM (4GB+ recommended for larger models)
-- graphviz and pygraphviz dependencies
+- At least 8GB RAM recommended for a mid-size Gemma model (more for larger models)
+
+> The decision tree is rendered in the browser (vis-network), so no Graphviz or other
+> system graphics libraries are required.
 
 ## Quick Start
 
@@ -20,7 +22,7 @@ This guide covers deploying the Game Theory Decision Analyzer on a traditional L
 sudo apt update && sudo apt upgrade -y
 
 # Install Python and required system packages
-sudo apt install -y python3 python3-pip python3-venv graphviz libgraphviz-dev pkg-config
+sudo apt install -y python3 python3-pip python3-venv
 
 # Install Ollama (if not already installed)
 curl -fsSL https://ollama.com/install.sh | sh
@@ -77,9 +79,20 @@ APP_PORT=8000
 APP_RELOAD=false
 DEBUG=false
 
-# Ollama Default Settings
+# Provider: "ollama" (local Gemma) or "openai"
+DEFAULT_PROVIDER=ollama
+
+# Ollama (local models such as Gemma)
 DEFAULT_OLLAMA_URL=http://localhost:11434
-DEFAULT_MODEL_NAME=llama3
+DEFAULT_MODEL_NAME=gemma4:12b
+
+# OpenAI (optional — leave blank to disable). Read from the server env; never sent
+# from the browser.
+OPENAI_API_KEY=
+DEFAULT_OPENAI_MODEL=gpt-4o
+
+# Generation
+TEMPERATURE=0.2
 
 # Logging
 LOG_LEVEL=INFO
@@ -103,7 +116,7 @@ sudo chown www-data:www-data /var/log/game-theory-analyzer
 ollama serve &
 
 # Pull a model if you haven't already
-ollama pull llama3
+ollama pull gemma4:12b
 
 # Test the application
 source venv/bin/activate
@@ -245,20 +258,19 @@ sudo systemctl start ollama
 sudo systemctl enable ollama
 
 # Pull your preferred model
-ollama pull llama3
+ollama pull gemma4:12b
 ```
 
 ### Available Models
 
 ```bash
-# List pulled models
+# List pulled models (these populate the model dropdown in the UI)
 ollama list
 
-# Pull other models
-ollama pull mistral
-ollama pull mixtral
-ollama pull gemma2
-ollama pull qwen2.5
+# Pull other chat-capable models
+ollama pull gemma4:e4b     # smaller/faster Gemma variant
+ollama pull qwen2.5:14b
+ollama pull llama3
 ```
 
 ## Firewall Configuration
@@ -427,17 +439,12 @@ sudo chown -R www-data:www-data /var/log/game-theory-analyzer
 sudo chmod -R 755 /opt/game-theory-analyzer
 ```
 
-### Graphviz Issues
+### Empty or Truncated Model Responses
 
-```bash
-# Reinstall graphviz dependencies
-sudo apt install -y graphviz libgraphviz-dev pkg-config
-
-# Reinstall pygraphviz in virtual environment
-source /opt/game-theory-analyzer/venv/bin/activate
-pip uninstall pygraphviz
-pip install pygraphviz --no-cache-dir
-```
+Some local models (e.g. Gemma) support a "thinking" mode that can consume the token
+budget and return empty content; the app disables it automatically. If analyses still
+come back empty or truncated, try a different or smaller model from the dropdown, or
+shorten the query.
 
 ## Security Best Practices
 
@@ -487,6 +494,6 @@ sudo systemctl status game-theory-analyzer
 curl http://localhost:8000
 
 # Pull Ollama Models
-ollama pull llama3
+ollama pull gemma4:12b
 ollama list
 ```

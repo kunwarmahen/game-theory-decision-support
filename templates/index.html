@@ -5,440 +5,433 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Game Theory Decision Analyzer</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
     <script>
         tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#3B82F6',
-                        secondary: '#8B5CF6',
-                        accent: '#10B981',
-                    }
-                }
-            }
+            theme: { extend: { colors: {
+                primary: '#4f46e5', secondary: '#7c3aed', accent: '#059669',
+                decision: '#3b82f6', chance: '#f59e0b', outcome: '#10b981'
+            }}}
         }
     </script>
     <style>
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn {
-            animation: fadeIn 0.5s ease-out;
-        }
-        .gradient-bg {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn .4s ease-out; }
+        .gradient-bg { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #db2777 100%); }
+        .prob-bar { transition: width .6s cubic-bezier(.4,0,.2,1); }
+        #tree { height: 520px; border-radius: .75rem; }
+        .spinner { border-top-color: transparent; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-    <!-- Header -->
+<body class="bg-slate-100 min-h-screen text-slate-800">
     <header class="gradient-bg text-white shadow-lg">
-        <div class="container mx-auto px-4 py-6">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-3xl font-bold">Game Theory Decision Analyzer</h1>
-                    <p class="text-blue-100 mt-1">Make strategic decisions with confidence</p>
-                </div>
-                <div class="hidden md:flex items-center space-x-4">
-                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                </div>
+        <div class="container mx-auto px-4 py-6 flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold tracking-tight">Game Theory Decision Analyzer</h1>
+                <p class="text-indigo-100 mt-1 text-sm md:text-base">Strategic decisions, computed — expected value by backward induction</p>
             </div>
+            <svg class="hidden md:block w-12 h-12 opacity-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
         </div>
     </header>
 
-    <!-- Main Content -->
-    <div class="container mx-auto px-4 py-8">
-        <div class="max-w-6xl mx-auto">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Main Input Card -->
-                <div class="lg:col-span-2">
-                    <div class="bg-white rounded-xl shadow-lg p-6 animate-fadeIn">
-                        <h2 class="text-2xl font-semibold text-gray-800 mb-4 flex items-center">
-                            <svg class="w-6 h-6 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Describe Your Situation
-                        </h2>
-                        <textarea
-                            id="query"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition duration-200 resize-none"
-                            rows="8"
-                            placeholder="Example: I'm negotiating a salary for a new job offer. The company initially offered $80,000 but I believe the market rate is $95,000. I have competing offers and strong performance reviews. How should I approach this negotiation?"
-                        ></textarea>
-                    </div>
+    <main class="container mx-auto px-4 py-8 max-w-6xl">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Input -->
+            <section class="lg:col-span-2">
+                <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-6 animate-fadeIn">
+                    <h2 class="text-lg font-semibold mb-3">Describe your situation</h2>
+                    <textarea id="query" rows="8"
+                        class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent resize-none text-sm"
+                        placeholder="Example: I'm negotiating salary for a new job. They offered $80k but market is ~$95k. I have a competing offer and strong reviews. How should I approach it?"></textarea>
                 </div>
+            </section>
 
-                <!-- Settings Card -->
-                <div class="lg:col-span-1">
-                    <div class="bg-white rounded-xl shadow-lg p-6 animate-fadeIn">
-                        <h3 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-                            <svg class="w-5 h-5 mr-2 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            Model Settings
-                        </h3>
+            <!-- Settings -->
+            <aside class="lg:col-span-1">
+                <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-6 animate-fadeIn">
+                    <h3 class="text-lg font-semibold mb-4">Settings</h3>
 
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">LLM Model</label>
-                                <select id="model_name" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition duration-200">
-                                    <option value="llama3">Llama 3</option>
-                                    <option value="llama3.1">Llama 3.1</option>
-                                    <option value="llama3.2">Llama 3.2</option>
-                                    <option value="mistral">Mistral</option>
-                                    <option value="mixtral">Mixtral</option>
-                                    <option value="gemma">Gemma</option>
-                                    <option value="gemma2">Gemma 2</option>
-                                    <option value="qwen">Qwen</option>
-                                    <option value="qwen2.5">Qwen 2.5</option>
-                                    <option value="phi">Phi</option>
-                                    <option value="custom">Custom...</option>
-                                </select>
-                            </div>
+                    <label class="block text-sm font-medium text-slate-600 mb-1">Provider</label>
+                    <div class="flex rounded-lg bg-slate-100 p-1 mb-4">
+                        <button data-provider="ollama" class="provider-btn flex-1 text-sm py-1.5 rounded-md font-medium">Local (Gemma)</button>
+                        <button data-provider="openai" class="provider-btn flex-1 text-sm py-1.5 rounded-md font-medium">OpenAI</button>
+                    </div>
 
-                            <div id="custom-model" class="hidden">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Custom Model Name</label>
-                                <input
-                                    type="text"
-                                    id="custom_model_name"
-                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition duration-200"
-                                    placeholder="e.g., llama3:8b"
-                                >
-                            </div>
+                    <label class="block text-sm font-medium text-slate-600 mb-1">Model</label>
+                    <select id="model" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm mb-4 bg-white"></select>
 
-                            <div>
-                                <button
-                                    id="toggle-advanced"
-                                    class="text-sm text-primary hover:text-blue-700 font-medium flex items-center transition duration-200"
-                                >
-                                    <svg id="advanced-arrow" class="w-4 h-4 mr-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                    Advanced Settings
-                                </button>
-                            </div>
+                    <div id="ollama-settings">
+                        <label class="block text-sm font-medium text-slate-600 mb-1">Ollama URL</label>
+                        <input id="ollamaUrl" type="text" value="http://localhost:11434"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm mb-4">
+                    </div>
+                    <p id="openai-note" class="hidden text-xs text-slate-500 mb-4">
+                        OpenAI key is read from the server environment — nothing is sent from the browser.
+                    </p>
 
-                            <div id="advanced-settings" class="hidden space-y-3 pt-2 border-t border-gray-200">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Ollama URL</label>
-                                    <input
-                                        type="text"
-                                        id="ollama_url"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition duration-200"
-                                        value="http://localhost:11434"
-                                    >
-                                    <p class="text-xs text-gray-500 mt-1">Default port: 11434</p>
-                                </div>
-                            </div>
-                        </div>
+                    <button id="analyzeBtn"
+                        class="w-full bg-primary hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-lg transition flex items-center justify-center gap-2">
+                        <span id="btnLabel">Analyze</span>
+                        <div id="btnSpinner" class="hidden spinner w-4 h-4 border-2 border-white rounded-full"></div>
+                    </button>
+                    <p id="statusMsg" class="text-xs text-slate-500 mt-2 text-center"></p>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Error -->
+        <div id="errorBox" class="hidden mt-6 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm"></div>
+
+        <!-- Results -->
+        <div id="results" class="hidden mt-8 space-y-6">
+            <!-- Recommendation banner -->
+            <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-6 animate-fadeIn">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-accent font-semibold">Recommended strategy (max expected value)</p>
+                        <h3 id="optimalDecision" class="text-xl font-bold mt-1"></h3>
+                        <p id="recommendedOutcome" class="text-sm text-slate-600 mt-1"></p>
+                    </div>
+                    <div class="text-center bg-emerald-50 rounded-lg px-5 py-3 shrink-0">
+                        <p class="text-xs text-emerald-700 font-medium">Expected Value</p>
+                        <p id="optimalEV" class="text-2xl font-bold text-emerald-600"></p>
                     </div>
                 </div>
             </div>
 
-            <!-- Analyze Button -->
-            <div class="mt-6 text-center">
-                <button
-                    id="analyze-btn"
-                    class="bg-gradient-to-r from-primary to-secondary text-white px-8 py-4 rounded-lg text-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-200 flex items-center justify-center mx-auto"
-                >
-                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                    </svg>
-                    Analyze Situation
-                </button>
+            <!-- Summary + stakeholders -->
+            <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-6 animate-fadeIn">
+                <h3 class="text-lg font-semibold mb-2">Situation summary</h3>
+                <p id="summary" class="text-sm text-slate-700 leading-relaxed"></p>
+                <div id="stakeholders" class="flex flex-wrap gap-2 mt-4"></div>
             </div>
 
-            <!-- Loading Indicator -->
-            <div id="loading" class="hidden mt-8">
-                <div class="bg-white rounded-xl shadow-lg p-8 text-center animate-fadeIn">
-                    <div class="inline-block animate-spin rounded-full h-16 w-16 border-4 border-primary border-t-transparent"></div>
-                    <p class="mt-4 text-lg text-gray-700 font-medium">Analyzing your situation using game theory principles...</p>
-                    <p class="mt-2 text-sm text-gray-500">This may take 10-30 seconds depending on your model</p>
+            <!-- Payoff matrix + Nash equilibria (only for simultaneous games) -->
+            <div id="gameSection" class="hidden bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-6 animate-fadeIn">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 class="text-lg font-semibold">Payoff matrix &amp; Nash equilibria</h3>
+                    <span class="text-xs text-slate-500">Normal-form game · equilibria computed, not guessed</span>
                 </div>
+                <p id="matrixPlayers" class="text-sm text-slate-600 mb-3"></p>
+                <div class="overflow-x-auto">
+                    <table id="matrix" class="border-collapse text-sm mx-auto"></table>
+                </div>
+                <p class="text-xs text-slate-400 mt-2">Each cell shows <span class="text-blue-600 font-medium">row payoff</span>, <span class="text-purple-600 font-medium">column payoff</span>. Highlighted cells are pure-strategy Nash equilibria.</p>
+                <div id="nashList" class="mt-4 space-y-2"></div>
             </div>
 
-            <!-- Results Section -->
-            <div id="results" class="hidden mt-8 space-y-6 animate-fadeIn">
-                <!-- Summary Card -->
-                <div class="bg-white rounded-xl shadow-lg p-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-4 flex items-center">
-                        <svg class="w-6 h-6 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        Situation Summary
-                    </h2>
-                    <p id="summary" class="text-gray-700 leading-relaxed"></p>
-                </div>
-
-                <!-- Stakeholders and Recommendation Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Stakeholders Card -->
-                    <div class="bg-white rounded-xl shadow-lg p-6">
-                        <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                            <svg class="w-5 h-5 mr-2 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                            </svg>
-                            Key Stakeholders
-                        </h3>
-                        <ul id="stakeholders" class="space-y-2"></ul>
-                    </div>
-
-                    <!-- Recommendation Card -->
-                    <div class="bg-gradient-to-br from-accent to-emerald-600 rounded-xl shadow-lg p-6 text-white">
-                        <h3 class="text-xl font-bold mb-4 flex items-center">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            Recommended Approach
-                        </h3>
-                        <p id="recommended" class="leading-relaxed"></p>
+            <!-- Decision tree -->
+            <div id="treeSection" class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-6 animate-fadeIn">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 class="text-lg font-semibold">Decision tree</h3>
+                    <div class="flex items-center gap-4 text-xs text-slate-600">
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full inline-block" style="background:#3b82f6"></span>Decision</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full inline-block" style="background:#f59e0b"></span>Chance</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full inline-block" style="background:#10b981"></span>Outcome</span>
+                        <span class="flex items-center gap-1"><span class="w-4 h-1 inline-block" style="background:#059669"></span>Optimal path</span>
                     </div>
                 </div>
+                <div id="tree" class="bg-slate-50 ring-1 ring-slate-200"></div>
+                <p class="text-xs text-slate-400 mt-2">EV = expected value computed by backward induction. Drag to pan, scroll to zoom.</p>
+            </div>
 
-                <!-- Outcomes Section -->
-                <div class="bg-white rounded-xl shadow-lg p-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                        <svg class="w-6 h-6 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                        Possible Outcomes
-                    </h2>
-                    <div id="outcomes" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
-                </div>
-
-                <!-- Decision Tree Section -->
-                <div class="bg-white rounded-xl shadow-lg p-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                        <svg class="w-6 h-6 mr-2 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                        </svg>
-                        Decision Tree Visualization
-                    </h2>
-                    <div class="bg-gray-50 rounded-lg p-4 flex justify-center">
-                        <img id="decision-tree" class="max-w-full h-auto rounded-lg shadow-md" alt="Decision Tree">
-                    </div>
-                </div>
+            <!-- Outcomes -->
+            <div>
+                <h3 class="text-lg font-semibold mb-3">Possible outcomes</h3>
+                <div id="outcomes" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
             </div>
         </div>
-    </div>
+    </main>
 
-    <!-- Footer -->
-    <footer class="mt-12 bg-gray-800 text-gray-300 py-6">
-        <div class="container mx-auto px-4 text-center">
-            <p>Game Theory Decision Analyzer - Make data-driven strategic decisions</p>
-            <p class="text-sm text-gray-400 mt-2">Powered by Advanced AI Models</p>
-        </div>
-    </footer>
+<script>
+const state = { provider: 'ollama', models: {} };
+const $ = (id) => document.getElementById(id);
 
-    <script>
-        // Toggle advanced settings
-        document.getElementById('toggle-advanced').addEventListener('click', () => {
-            const advancedSettings = document.getElementById('advanced-settings');
-            const arrow = document.getElementById('advanced-arrow');
-            const isHidden = advancedSettings.classList.contains('hidden');
+async function loadModels() {
+    const url = $('ollamaUrl').value;
+    try {
+        const r = await fetch(`/api/models?ollama_url=${encodeURIComponent(url)}`);
+        state.models = await r.json();
+        state.provider = state.models.default_provider || 'ollama';
+    } catch (e) {
+        state.models = { ollama_models: [], openai_available: false };
+    }
+    // OpenAI availability
+    const oaiBtn = document.querySelector('[data-provider="openai"]');
+    if (!state.models.openai_available) {
+        oaiBtn.disabled = true;
+        oaiBtn.classList.add('opacity-40', 'cursor-not-allowed');
+        oaiBtn.title = 'Set OPENAI_API_KEY on the server to enable';
+    }
+    setProvider(state.provider);
+}
 
-            if (isHidden) {
-                advancedSettings.classList.remove('hidden');
-                arrow.style.transform = 'rotate(180deg)';
-            } else {
-                advancedSettings.classList.add('hidden');
-                arrow.style.transform = 'rotate(0deg)';
-            }
-        });
+function setProvider(p) {
+    if (p === 'openai' && !state.models.openai_available) return;
+    state.provider = p;
+    document.querySelectorAll('.provider-btn').forEach(b => {
+        const active = b.dataset.provider === p;
+        b.classList.toggle('bg-white', active);
+        b.classList.toggle('shadow-sm', active);
+        b.classList.toggle('text-primary', active);
+        b.classList.toggle('text-slate-500', !active);
+    });
+    $('ollama-settings').classList.toggle('hidden', p !== 'ollama');
+    $('openai-note').classList.toggle('hidden', p !== 'openai');
 
-        // Handle custom model selection
-        document.getElementById('model_name').addEventListener('change', function() {
-            const customModelDiv = document.getElementById('custom-model');
-            if (this.value === 'custom') {
-                customModelDiv.classList.remove('hidden');
-            } else {
-                customModelDiv.classList.add('hidden');
-            }
-        });
-
-        // Main analyze function
-        document.getElementById('analyze-btn').addEventListener('click', async () => {
-            const query = document.getElementById('query').value.trim();
-            const modelSelect = document.getElementById('model_name');
-            let modelName = modelSelect.value;
-
-            // Handle custom model name
-            if (modelName === 'custom') {
-                const customModel = document.getElementById('custom_model_name').value.trim();
-                if (!customModel) {
-                    alert('Please enter a custom model name.');
-                    return;
-                }
-                modelName = customModel;
-            }
-
-            const ollamaUrl = document.getElementById('ollama_url').value.trim();
-
-            if (!query) {
-                alert('Please describe your situation.');
-                return;
-            }
-
-            if (!ollamaUrl) {
-                alert('Please enter the Ollama URL.');
-                return;
-            }
-
-            // Show loading indicator
-            document.getElementById('loading').classList.remove('hidden');
-            document.getElementById('results').classList.add('hidden');
-            document.getElementById('analyze-btn').disabled = true;
-            document.getElementById('analyze-btn').classList.add('opacity-50', 'cursor-not-allowed');
-
-            try {
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        query: query,
-                        ollama_url: ollamaUrl,
-                        model_name: modelName
-                    })
-                });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'An error occurred during analysis.');
-                }
-
-                const data = await response.json();
-                displayResults(data);
-
-            } catch (error) {
-                alert(error.message);
-            } finally {
-                document.getElementById('loading').classList.add('hidden');
-                document.getElementById('analyze-btn').disabled = false;
-                document.getElementById('analyze-btn').classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        });
-
-        function displayResults(data) {
-            // Update summary
-            document.getElementById('summary').textContent = data.summary;
-
-            // Update stakeholders
-            const stakeholdersEl = document.getElementById('stakeholders');
-            stakeholdersEl.innerHTML = '';
-            data.stakeholders.forEach(stakeholder => {
-                const li = document.createElement('li');
-                li.className = 'flex items-center text-gray-700';
-                li.innerHTML = `
-                    <svg class="w-4 h-4 mr-2 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                    </svg>
-                    ${stakeholder}
-                `;
-                stakeholdersEl.appendChild(li);
-            });
-
-            // Update recommendation
-            document.getElementById('recommended').textContent = data.recommended_outcome;
-
-            // Sort outcomes by probability
-            const sortedOutcomes = [...data.outcomes].sort((a, b) => b.probability - a.probability);
-
-            // Update outcomes
-            const outcomesEl = document.getElementById('outcomes');
-            outcomesEl.innerHTML = '';
-
-            sortedOutcomes.forEach((outcome, index) => {
-                const card = document.createElement('div');
-                card.className = 'bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-6 border border-gray-200 hover:shadow-lg transition duration-200';
-
-                const probabilityPercent = (outcome.probability * 100).toFixed(1);
-                const color = getColorForProbability(outcome.probability);
-
-                card.innerHTML = `
-                    <div class="flex items-start justify-between mb-3">
-                        <h4 class="text-lg font-semibold text-gray-800 flex-1">${outcome.description}</h4>
-                        <span class="ml-2 px-3 py-1 rounded-full text-sm font-bold text-white flex-shrink-0" style="background-color: ${color}">
-                            ${probabilityPercent}%
-                        </span>
-                    </div>
-
-                    <div class="mb-4">
-                        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                            <div class="h-3 rounded-full transition-all duration-500"
-                                 style="width: ${probabilityPercent}%; background-color: ${color}">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <p class="text-sm font-semibold text-gray-700 mb-2">Key Factors:</p>
-                        <ul class="space-y-1">
-                            ${outcome.key_factors.map(factor => `
-                                <li class="text-sm text-gray-600 flex items-start">
-                                    <svg class="w-4 h-4 mr-2 mt-0.5 text-primary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-                                    </svg>
-                                    ${factor}
-                                </li>
-                            `).join('')}
-                        </ul>
-                    </div>
-
-                    <div class="border-t border-gray-300 pt-3">
-                        <p class="text-sm font-semibold text-gray-700 mb-1">Recommendation:</p>
-                        <p class="text-sm text-gray-600">${outcome.recommendation}</p>
-                    </div>
-                `;
-
-                outcomesEl.appendChild(card);
-            });
-
-            // Set decision tree image
-            if (data.decision_tree_image) {
-                document.getElementById('decision-tree').src = `data:image/png;base64,${data.decision_tree_image}`;
-            }
-
-            // Show results
-            document.getElementById('results').classList.remove('hidden');
-
-            // Smooth scroll to results
-            setTimeout(() => {
-                document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 100);
+    const sel = $('model');
+    sel.innerHTML = '';
+    if (p === 'ollama') {
+        const models = state.models.ollama_models || [];
+        if (!models.length) {
+            sel.innerHTML = '<option value="">No Ollama models found</option>';
+        } else {
+            models.forEach(m => sel.add(new Option(m, m)));
+            const def = state.models.default_ollama_model;
+            if (def && models.includes(def)) sel.value = def;
         }
+    } else {
+        ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'].forEach(m => sel.add(new Option(m, m)));
+        if (state.models.default_openai_model) sel.value = state.models.default_openai_model;
+    }
+}
 
-        function getColorForProbability(probability) {
-            // Color gradient from red (low) to yellow (medium) to green (high)
-            if (probability < 0.33) {
-                const r = 239;
-                const g = Math.round(68 + (probability / 0.33) * 100);
-                const b = 68;
-                return `rgb(${r}, ${g}, ${b})`;
-            } else if (probability < 0.66) {
-                const r = Math.round(239 - ((probability - 0.33) / 0.33) * 100);
-                const g = 168;
-                const b = 68;
-                return `rgb(${r}, ${g}, ${b})`;
-            } else {
-                const r = Math.round(139 - ((probability - 0.66) / 0.34) * 100);
-                const g = Math.round(168 + ((probability - 0.66) / 0.34) * 27);
-                const b = 68;
-                return `rgb(${r}, ${g}, ${b})`;
-            }
-        }
+document.querySelectorAll('.provider-btn').forEach(b =>
+    b.addEventListener('click', () => setProvider(b.dataset.provider)));
 
-        // Add enter key support for textarea
-        document.getElementById('query').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.ctrlKey) {
-                document.getElementById('analyze-btn').click();
-            }
+async function analyze() {
+    const query = $('query').value.trim();
+    if (!query) { showError('Please describe your situation first.'); return; }
+
+    setLoading(true);
+    $('errorBox').classList.add('hidden');
+    try {
+        const r = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query,
+                provider: state.provider,
+                model_name: $('model').value || null,
+                ollama_url: $('ollamaUrl').value
+            })
         });
-    </script>
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `Request failed (${r.status})`);
+        }
+        render(await r.json());
+    } catch (e) {
+        showError(e.message);
+    } finally {
+        setLoading(false);
+    }
+}
+
+function setLoading(on) {
+    $('analyzeBtn').disabled = on;
+    $('btnSpinner').classList.toggle('hidden', !on);
+    $('btnLabel').textContent = on ? 'Analyzing…' : 'Analyze';
+    $('statusMsg').textContent = on ? 'Local models can take 30–90s…' : '';
+}
+
+function showError(msg) {
+    const box = $('errorBox');
+    box.textContent = msg;
+    box.classList.remove('hidden');
+}
+
+const fmt = (v) => (v == null ? '—' : (Math.round(v * 100) / 100).toString());
+
+function render(a) {
+    $('results').classList.remove('hidden');
+    $('optimalDecision').textContent = a.optimal_decision || '—';
+    $('recommendedOutcome').textContent = a.recommended_outcome || '';
+    $('optimalEV').textContent = fmt(a.optimal_expected_value);
+    $('summary').textContent = a.summary || '';
+
+    $('stakeholders').innerHTML = (a.stakeholders || []).map(s =>
+        `<span class="px-3 py-1 bg-indigo-50 text-primary rounded-full text-xs font-medium">${esc(s)}</span>`
+    ).join('');
+
+    // Outcomes
+    $('outcomes').innerHTML = (a.outcomes || []).map(o => {
+        const pct = Math.round((o.probability || 0) * 100);
+        const factors = (o.key_factors || []).map(f =>
+            `<li class="text-xs text-slate-600">${esc(f)}</li>`).join('');
+        return `<div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-5 animate-fadeIn">
+            <div class="flex justify-between items-start gap-2">
+              <h4 class="font-semibold text-sm">${esc(o.description)}</h4>
+              <span class="text-sm font-bold text-primary shrink-0">${pct}%</span>
+            </div>
+            <div class="w-full bg-slate-100 rounded-full h-2 mt-2 mb-3">
+              <div class="prob-bar bg-primary h-2 rounded-full" style="width:${pct}%"></div>
+            </div>
+            <ul class="list-disc list-inside space-y-0.5 mb-3">${factors}</ul>
+            <p class="text-xs text-slate-700"><span class="font-semibold text-accent">Recommendation:</span> ${esc(o.recommendation)}</p>
+        </div>`;
+    }).join('');
+
+    renderGame(a.payoff_matrix, a.nash_equilibria || []);
+
+    const tree = a.decision_tree || [];
+    $('treeSection').classList.toggle('hidden', tree.length === 0);
+    if (tree.length) drawTree(tree);
+    $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderGame(m, nash) {
+    const section = $('gameSection');
+    if (!m || !m.applicable || !(m.cells || []).length) {
+        section.classList.add('hidden');
+        return;
+    }
+    section.classList.remove('hidden');
+    $('matrixPlayers').innerHTML =
+        `Rows: <span class="text-blue-600 font-semibold">${esc(m.player_row || 'Player 1')}</span> · ` +
+        `Columns: <span class="text-purple-600 font-semibold">${esc(m.player_col || 'Player 2')}</span>`;
+
+    // Which cells are pure-strategy equilibria (to highlight)?
+    const neCells = new Set(
+        nash.filter(e => e.kind === 'pure')
+            .map(e => `${e.row_strategy}||${e.col_strategy}`)
+    );
+    const pay = {};
+    m.cells.forEach(c => { pay[`${c.row_strategy}||${c.col_strategy}`] = c; });
+
+    let html = '<thead><tr><th class="p-2"></th>';
+    m.col_strategies.forEach(cs =>
+        html += `<th class="p-2 border border-slate-200 bg-purple-50 text-purple-700 font-semibold">${esc(cs)}</th>`);
+    html += '</tr></thead><tbody>';
+    m.row_strategies.forEach(rs => {
+        html += `<tr><th class="p-2 border border-slate-200 bg-blue-50 text-blue-700 font-semibold text-left">${esc(rs)}</th>`;
+        m.col_strategies.forEach(cs => {
+            const c = pay[`${rs}||${cs}`];
+            const isNE = neCells.has(`${rs}||${cs}`);
+            const body = c
+                ? `<span class="text-blue-600 font-semibold">${fmt(c.row_payoff)}</span>, <span class="text-purple-600 font-semibold">${fmt(c.col_payoff)}</span>`
+                : '—';
+            html += `<td class="p-3 border text-center ${isNE ? 'bg-emerald-100 border-emerald-400 ring-2 ring-emerald-400' : 'border-slate-200'}">
+                ${body}${isNE ? '<div class="text-[10px] text-emerald-700 font-semibold mt-0.5">NASH</div>' : ''}
+            </td>`;
+        });
+        html += '</tr>';
+    });
+    html += '</tbody>';
+    $('matrix').innerHTML = html;
+
+    // Equilibria list
+    if (!nash.length) {
+        $('nashList').innerHTML = '<p class="text-sm text-slate-500">No Nash equilibrium found for this matrix.</p>';
+        return;
+    }
+    $('nashList').innerHTML = nash.map(e => {
+        const tag = e.kind === 'pure'
+            ? '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-semibold">PURE</span>'
+            : '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-semibold">MIXED</span>';
+        const payoffs = (e.row_payoff != null)
+            ? `<span class="text-xs text-slate-500">payoffs ${fmt(e.row_payoff)}, ${fmt(e.col_payoff)}</span>` : '';
+        return `<div class="bg-slate-50 ring-1 ring-slate-200 rounded-lg p-3">
+            <div class="flex items-center gap-2 flex-wrap">${tag}
+              <span class="font-semibold text-sm">${esc(e.profile)}</span> ${payoffs}</div>
+            <p class="text-xs text-slate-600 mt-1">${esc(e.description)}</p>
+        </div>`;
+    }).join('');
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// Wrap a label onto short lines and cap total length so nodes stay compact.
+function shortLabel(text, maxChars = 40, perLine = 20) {
+    let t = String(text).replace(/\s+/g, ' ').trim();
+    if (t.length > maxChars) t = t.slice(0, maxChars - 1).trimEnd() + '…';
+    const words = t.split(' ');
+    const lines = [];
+    let line = '';
+    for (const w of words) {
+        if ((line + ' ' + w).trim().length > perLine && line) { lines.push(line); line = w; }
+        else line = (line + ' ' + w).trim();
+    }
+    if (line) lines.push(line);
+    return lines.join('\n');
+}
+
+let network = null;
+function drawTree(tree) {
+    const colors = {
+        decision: { bg: '#dbeafe', bd: '#3b82f6' },
+        chance:   { bg: '#fef3c7', bd: '#f59e0b' },
+        outcome:  { bg: '#d1fae5', bd: '#10b981' },
+    };
+    const byId = Object.fromEntries(tree.map(n => [n.id, n]));
+
+    const nodes = tree.map(n => {
+        const c = colors[n.type] || { bg: '#e2e8f0', bd: '#94a3b8' };
+        // Leaves: show payoff (EV == payoff there). Internal nodes: show EV.
+        const isLeaf = !(n.children && n.children.some(cid => byId[cid]));
+        const metric = isLeaf
+            ? (n.payoff != null ? `payoff ${fmt(n.payoff)}` : '')
+            : (n.expected_value != null ? `EV ${fmt(n.expected_value)}` : '');
+        const label = `<b>${shortLabel(n.label)}</b>${metric ? '\n' + metric : ''}`;
+        // Full detail on hover.
+        const title = `${n.label}\n${n.type}` +
+            (n.probability != null ? ` · p=${Math.round(n.probability * 100)}%` : '') +
+            (n.expected_value != null ? `\nEV = ${fmt(n.expected_value)}` : '') +
+            (n.payoff != null ? `\npayoff = ${fmt(n.payoff)}` : '') +
+            (n.is_optimal ? '\n★ on optimal path' : '');
+        return {
+            id: n.id,
+            label,
+            title,
+            shape: n.type === 'decision' ? 'box' : (n.type === 'chance' ? 'diamond' : 'ellipse'),
+            color: {
+                background: c.bg, border: n.is_optimal ? '#059669' : c.bd,
+                highlight: { background: c.bg, border: '#059669' },
+            },
+            borderWidth: n.is_optimal ? 3 : 1.5,
+            shadow: { enabled: true, size: 6, x: 0, y: 2, color: 'rgba(15,23,42,0.12)' },
+            margin: 12,
+            font: { multi: 'html', color: '#0f172a', size: 13, face: 'system-ui', align: 'center' },
+        };
+    });
+
+    const edges = [];
+    tree.forEach(n => (n.children || []).forEach(cid => {
+        const child = byId[cid];
+        if (!child) return;
+        const optimal = n.is_optimal && child.is_optimal;
+        edges.push({
+            from: n.id, to: cid,
+            label: child.probability != null ? `${Math.round(child.probability * 100)}%` : '',
+            color: { color: optimal ? '#059669' : '#cbd5e1', highlight: '#059669' },
+            width: optimal ? 3 : 1.5,
+            arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+            smooth: { enabled: true, type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.55 },
+            font: { size: 11, color: '#475569', strokeWidth: 4, strokeColor: '#f8fafc' },
+        });
+    }));
+
+    if (network) network.destroy();
+    network = new vis.Network($('tree'), { nodes, edges }, {
+        layout: { hierarchical: {
+            direction: 'UD', sortMethod: 'directed', shakeTowards: 'roots',
+            levelSeparation: 130, nodeSpacing: 200, treeSpacing: 260,
+            blockShifting: true, edgeMinimization: true, parentCentralization: true,
+        }},
+        physics: false,
+        interaction: { dragNodes: true, zoomView: true, dragView: true, hover: true, tooltipDelay: 120 },
+        nodes: { widthConstraint: { minimum: 90, maximum: 150 }, heightConstraint: { minimum: 34 } },
+    });
+    network.once('afterDrawing', () => network.fit({ animation: false }));
+}
+
+$('analyzeBtn').addEventListener('click', analyze);
+$('ollamaUrl').addEventListener('change', loadModels);
+loadModels();
+</script>
 </body>
 </html>
