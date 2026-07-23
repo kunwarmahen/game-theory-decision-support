@@ -127,6 +127,33 @@ Visit `http://your-server-ip:8000` in your browser to verify it's working.
 
 Press Ctrl+C to stop the test server.
 
+### 7. Verify the Build
+
+Run the unit tests before promoting a deployment. They cover the deterministic
+game-theory engine, need no model or network, and finish in under a second:
+
+```bash
+source venv/bin/activate
+pytest
+```
+
+Smoke-test the running service without invoking a model (the recompute endpoint is
+pure computation — expect a single pure equilibrium, `Defect / Defect`):
+
+```bash
+curl -s localhost:8000/api/models
+
+curl -s -X POST localhost:8000/api/recompute -H 'Content-Type: application/json' -d '{
+ "payoff_matrix":{"applicable":true,"player_row":"A","player_col":"B",
+  "row_strategies":["Coop","Defect"],"col_strategies":["Coop","Defect"],
+  "cells":[{"row_strategy":"Coop","col_strategy":"Coop","row_payoff":3,"col_payoff":3},
+           {"row_strategy":"Coop","col_strategy":"Defect","row_payoff":0,"col_payoff":5},
+           {"row_strategy":"Defect","col_strategy":"Coop","row_payoff":5,"col_payoff":0},
+           {"row_strategy":"Defect","col_strategy":"Defect","row_payoff":1,"col_payoff":1}]}}'
+```
+
+See the README for the full list of example scenarios to try in the UI.
+
 ## Production Deployment with systemd
 
 ### 1. Install systemd Service
@@ -349,6 +376,9 @@ source venv/bin/activate
 # Update dependencies
 pip install -r requirements.txt --upgrade
 
+# Verify the engine still passes its tests before restarting
+pytest
+
 # Restart service
 sudo systemctl restart game-theory-analyzer
 
@@ -492,6 +522,10 @@ sudo systemctl status game-theory-analyzer
 
 # Test Application
 curl http://localhost:8000
+curl http://localhost:8000/api/models
+
+# Run the engine unit tests
+pytest
 
 # Pull Ollama Models
 ollama pull gemma4:12b
