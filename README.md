@@ -323,6 +323,12 @@ curl -s -X POST localhost:8000/api/analyze -H 'Content-Type: application/json' \
   -d '{"query":"Two rival chains decide simultaneously whether to start a price war.","provider":"ollama"}'
 ```
 
+## Roadmap
+
+Planned work, known limitations, and implementation notes live in
+[ROADMAP.md](ROADMAP.md) — next up is dominant/dominated strategies and Pareto
+efficiency in the payoff matrix.
+
 ## Production deployment
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for systemd, Nginx reverse proxy, and TLS.
