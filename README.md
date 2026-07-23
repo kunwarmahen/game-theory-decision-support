@@ -170,6 +170,20 @@ Battle of the Sexes (two pure + one mixed).
 **Scope:** the matrix and mixed-NE solver target two-player games (mixed NE specifically
 for 2x2). Pure-strategy NE works for any nxm matrix.
 
+## Tests
+
+The deterministic engine (backward induction, Nash equilibria, tree sanitizing) is
+covered by unit tests:
+
+```bash
+pip install pytest
+pytest
+```
+
+Nash tests assert correctness against textbook games (Prisoner's Dilemma, Matching
+Pennies, Battle of the Sexes); the decision-tree tests cover probability normalization,
+duplicate/dangling-node repair, and optimal-path marking.
+
 ## Production deployment
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for systemd, Nginx reverse proxy, and TLS.

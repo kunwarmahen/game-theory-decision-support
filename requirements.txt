@@ -17,5 +17,8 @@ openai==1.10.0
 python-multipart==0.0.9
 python-dotenv==1.0.1
 
+# Testing (dev)
+pytest==8.0.0
+
 # NOTE: The decision tree is now rendered interactively in the browser
 # (vis-network), so matplotlib / networkx / pygraphviz are no longer required.
