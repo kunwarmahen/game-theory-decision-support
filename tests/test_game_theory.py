@@ -188,6 +188,26 @@ def test_chance_children_missing_probability_use_equal_weight():
     assert math.isclose(root.expected_value, 15.0)  # 0.5*10 + 0.5*20
 
 
+def test_recompute_clears_stale_optimal_path():
+    # Simulates the sensitivity flow: compute, change a payoff, recompute. The
+    # previously-optimal branch must no longer be flagged.
+    nodes = [
+        node("root", "decision", ["hi", "lo"]),
+        node("hi", "outcome", [], payoff=100),
+        node("lo", "outcome", [], payoff=10),
+    ]
+    compute_expected_values(nodes)
+    ids = {n.id: n for n in nodes}
+    assert ids["hi"].is_optimal and not ids["lo"].is_optimal
+
+    # Flip the payoffs: "lo" is now the better branch.
+    ids["hi"].payoff = 5
+    _, label, ev = compute_expected_values(nodes)
+    assert ev == 10 and label == "lo"
+    assert ids["lo"].is_optimal
+    assert not ids["hi"].is_optimal  # stale flag must be cleared
+
+
 def test_cycle_guard_terminates():
     nodes = [
         node("root", "decision", ["a"]),

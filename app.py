@@ -8,7 +8,7 @@ backward induction. See models.py / game_theory.py / providers.py.
 from __future__ import annotations
 
 import logging
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from config import settings
 from game_theory import process_analysis
-from models import Analysis, llm_schema
+from models import Analysis, PayoffMatrix, TreeNode, llm_schema
 from prompts import SYSTEM_PROMPT, build_analysis_prompt
 from providers import (
     LLMProvider,
@@ -44,6 +44,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 templates = Jinja2Templates(directory="templates")
+
+
+class RecomputeRequest(BaseModel):
+    """Re-run the deterministic engine on user-adjusted assumptions (no LLM call)."""
+
+    decision_tree: List[TreeNode] = []
+    payoff_matrix: Optional[PayoffMatrix] = None
 
 
 class AnalysisRequest(BaseModel):
@@ -117,6 +124,20 @@ async def analyze_situation(req: AnalysisRequest):
     logger.info("Analysis complete | optimal=%s EV=%s",
                 analysis.optimal_decision, analysis.optimal_expected_value)
     return analysis
+
+
+@app.post("/api/recompute", response_model=Analysis)
+async def recompute(req: RecomputeRequest):
+    """Recompute expected values and Nash equilibria from edited assumptions.
+
+    Purely deterministic — this runs the same engine as /api/analyze but never
+    calls a model, so sensitivity analysis is instant.
+    """
+    analysis = Analysis(
+        decision_tree=req.decision_tree,
+        payoff_matrix=req.payoff_matrix,
+    )
+    return process_analysis(analysis)
 
 
 def main():

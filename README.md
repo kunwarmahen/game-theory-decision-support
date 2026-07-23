@@ -26,6 +26,10 @@ optional OpenAI provider.
 - **Interactive decision tree** — rendered in the browser with vis-network (color-coded
   node types, probability edge labels, per-node EV, optimal path). No server-side image
   generation, so `matplotlib`/`networkx`/`graphviz` are no longer needed.
+- **Interactive sensitivity analysis** — the probabilities and payoffs are the model's
+  *estimates*, so you can edit them in the UI and the expected values, optimal path and
+  Nash equilibria re-solve instantly (via `/api/recompute`, which runs the same engine
+  with no LLM call). Shows the EV delta vs the original and resets in one click.
 - **Model dropdown** — auto-populated from your locally installed Ollama models.
 
 ## Architecture
@@ -93,6 +97,11 @@ CORS_ORIGINS=*
 Interactive docs at `http://localhost:8000/docs`.
 
 **GET** `/api/models` — installed (chat-capable) Ollama models + provider availability.
+
+**POST** `/api/recompute` — re-solve edited assumptions with no LLM call. Accepts
+`{"decision_tree": [...], "payoff_matrix": {...}}` and returns the same shape as
+`/api/analyze` with expected values, optimal path and Nash equilibria recomputed. This
+powers the sensitivity analysis.
 
 **POST** `/api/analyze`
 ```json

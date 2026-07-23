@@ -161,6 +161,12 @@ def compute_expected_values(
     visiting: set[str] = set()
     best_child: Dict[str, str] = {}  # decision id -> its EV-maximizing child id
 
+    # Clear any previous results so recomputation (e.g. after the user edits an
+    # assumption) can't leave a stale optimal path or expected value behind.
+    for n in nodes:
+        n.expected_value = None
+        n.is_optimal = False
+
     def value_of(node_id: str) -> float:
         node = lookup.get(node_id)
         if node is None:

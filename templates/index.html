@@ -91,13 +91,18 @@
             <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-6 animate-fadeIn">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <p class="text-xs uppercase tracking-wide text-accent font-semibold">Recommended strategy (max expected value)</p>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <p class="text-xs uppercase tracking-wide text-accent font-semibold">Recommended strategy (max expected value)</p>
+                            <span id="editedBadge" class="hidden px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-semibold">ADJUSTED</span>
+                            <button id="resetBtn" class="hidden text-xs text-primary hover:underline font-medium">reset to model's estimates</button>
+                        </div>
                         <h3 id="optimalDecision" class="text-xl font-bold mt-1"></h3>
                         <p id="recommendedOutcome" class="text-sm text-slate-600 mt-1"></p>
                     </div>
                     <div class="text-center bg-emerald-50 rounded-lg px-5 py-3 shrink-0">
                         <p class="text-xs text-emerald-700 font-medium">Expected Value</p>
                         <p id="optimalEV" class="text-2xl font-bold text-emerald-600"></p>
+                        <p id="evDelta" class="text-xs font-medium mt-0.5"></p>
                     </div>
                 </div>
             </div>
@@ -119,7 +124,7 @@
                 <div class="overflow-x-auto">
                     <table id="matrix" class="border-collapse text-sm mx-auto"></table>
                 </div>
-                <p class="text-xs text-slate-400 mt-2">Each cell shows <span class="text-blue-600 font-medium">row payoff</span>, <span class="text-purple-600 font-medium">column payoff</span>. Highlighted cells are pure-strategy Nash equilibria.</p>
+                <p class="text-xs text-slate-400 mt-2">Each cell shows <span class="text-blue-600 font-medium">row payoff</span>, <span class="text-purple-600 font-medium">column payoff</span>. Highlighted cells are pure-strategy Nash equilibria. <span class="text-slate-500">Edit any payoff to re-solve the game instantly.</span></p>
                 <div id="nashList" class="mt-4 space-y-2"></div>
             </div>
 
@@ -136,6 +141,23 @@
                 </div>
                 <div id="tree" class="bg-slate-50 ring-1 ring-slate-200"></div>
                 <p class="text-xs text-slate-400 mt-2">EV = expected value computed by backward induction. Drag to pan, scroll to zoom.</p>
+
+                <!-- Sensitivity analysis -->
+                <details id="assumptionsBox" class="mt-4 border border-slate-200 rounded-lg">
+                    <summary class="cursor-pointer select-none px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        Adjust assumptions — test how sensitive the result is
+                    </summary>
+                    <div class="px-4 pb-4">
+                        <p class="text-xs text-slate-500 my-2">
+                            These numbers are the model's estimates. Edit them to stress-test the conclusion —
+                            the expected values, optimal path and equilibria recompute instantly.
+                            Sibling probabilities are re-normalized to total 100%.
+                        </p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm" id="assumptions"></table>
+                        </div>
+                    </div>
+                </details>
             </div>
 
             <!-- Outcomes -->
@@ -246,11 +268,20 @@ function showError(msg) {
 
 const fmt = (v) => (v == null ? '—' : (Math.round(v * 100) / 100).toString());
 
-function render(a) {
+function render(a, opts = {}) {
+    // Keep the pristine model output so "reset" can restore it after edits.
+    if (!opts.isRecompute) {
+        state.analysis = a;
+        state.original = JSON.parse(JSON.stringify(a));
+        state.edited = false;
+    }
     $('results').classList.remove('hidden');
     $('optimalDecision').textContent = a.optimal_decision || '—';
     $('recommendedOutcome').textContent = a.recommended_outcome || '';
     $('optimalEV').textContent = fmt(a.optimal_expected_value);
+    renderEvDelta(a.optimal_expected_value);
+    $('editedBadge').classList.toggle('hidden', !state.edited);
+    $('resetBtn').classList.toggle('hidden', !state.edited);
     $('summary').textContent = a.summary || '';
 
     $('stakeholders').innerHTML = (a.stakeholders || []).map(s =>
@@ -279,9 +310,144 @@ function render(a) {
 
     const tree = a.decision_tree || [];
     $('treeSection').classList.toggle('hidden', tree.length === 0);
-    if (tree.length) drawTree(tree);
-    $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (tree.length) { drawTree(tree); renderAssumptions(tree); }
+    if (!opts.isRecompute) $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+// ---- Sensitivity analysis ------------------------------------------------
+function renderEvDelta(current) {
+    const el = $('evDelta');
+    const base = state.original && state.original.optimal_expected_value;
+    if (!state.edited || base == null || current == null) { el.textContent = ''; return; }
+    const d = current - base;
+    if (Math.abs(d) < 1e-9) { el.textContent = 'no change'; el.className = 'text-xs font-medium mt-0.5 text-slate-400'; return; }
+    el.textContent = `${d > 0 ? '▲ +' : '▼ '}${fmt(d)} vs original`;
+    el.className = `text-xs font-medium mt-0.5 ${d > 0 ? 'text-emerald-600' : 'text-red-500'}`;
+}
+
+// Editable rows for every node carrying a probability or a payoff.
+function renderAssumptions(tree) {
+    const byId = Object.fromEntries(tree.map(n => [n.id, n]));
+    const rows = tree.filter(n =>
+        n.probability != null || n.payoff != null ||
+        !(n.children || []).some(c => byId[c])   // leaves can gain a payoff
+    );
+    if (!rows.length) { $('assumptionsBox').classList.add('hidden'); return; }
+    $('assumptionsBox').classList.remove('hidden');
+
+    let html = `<thead><tr class="text-left text-xs text-slate-500 border-b border-slate-200">
+        <th class="py-2">Node</th><th class="py-2">Type</th>
+        <th class="py-2 w-32">Probability</th><th class="py-2 w-32">Payoff</th><th class="py-2 w-24">EV</th></tr></thead><tbody>`;
+    rows.forEach(n => {
+        const isLeaf = !(n.children || []).some(c => byId[c]);
+        const probInput = n.probability != null
+            ? `<input type="number" step="0.05" min="0" max="1" value="${n.probability.toFixed(2)}"
+                 data-node="${esc(n.id)}" data-field="probability"
+                 class="assumption w-24 px-2 py-1 border border-slate-300 rounded text-sm">`
+            : '<span class="text-slate-300 text-xs">—</span>';
+        const payInput = isLeaf
+            ? `<input type="number" step="1" value="${n.payoff != null ? n.payoff : 0}"
+                 data-node="${esc(n.id)}" data-field="payoff"
+                 class="assumption w-24 px-2 py-1 border border-slate-300 rounded text-sm">`
+            : '<span class="text-slate-300 text-xs">—</span>';
+        html += `<tr class="border-b border-slate-100 ${n.is_optimal ? 'bg-emerald-50/50' : ''}">
+            <td class="py-2 pr-2">${esc(n.label)}</td>
+            <td class="py-2 pr-2 text-xs text-slate-500">${esc(n.type)}</td>
+            <td class="py-2 pr-2">${probInput}</td>
+            <td class="py-2 pr-2">${payInput}</td>
+            <td class="py-2 text-xs font-semibold ${n.is_optimal ? 'text-emerald-600' : 'text-slate-500'}">${fmt(n.expected_value)}</td>
+        </tr>`;
+    });
+    $('assumptions').innerHTML = html + '</tbody>';
+}
+
+let recomputeTimer = null;
+function scheduleRecompute() {
+    clearTimeout(recomputeTimer);
+    recomputeTimer = setTimeout(recompute, 350);  // debounce typing
+}
+
+async function recompute() {
+    const a = state.analysis;
+    if (!a) return;
+    try {
+        const r = await fetch('/api/recompute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                decision_tree: a.decision_tree || [],
+                payoff_matrix: a.payoff_matrix || null,
+            })
+        });
+        if (!r.ok) throw new Error('Recompute failed');
+        const updated = await r.json();
+        // Preserve the narrative fields; only the computed parts change.
+        state.analysis = Object.assign({}, a, {
+            decision_tree: updated.decision_tree,
+            payoff_matrix: updated.payoff_matrix,
+            nash_equilibria: updated.nash_equilibria,
+            optimal_decision: updated.optimal_decision,
+            optimal_expected_value: updated.optimal_expected_value,
+        });
+        state.edited = true;
+        withFocusPreserved(() => render(state.analysis, { isRecompute: true }));
+    } catch (e) {
+        showError(e.message);
+    }
+}
+
+// Re-rendering replaces the inputs, which would steal focus while typing.
+// Remember which field was focused and restore it afterwards.
+function withFocusPreserved(fn) {
+    const el = document.activeElement;
+    const d = el && el.dataset;
+    const sig = (d && (d.node || d.row))
+        ? { node: d.node, row: d.row, col: d.col, field: d.field, pos: el.selectionStart }
+        : null;
+    fn();
+    if (!sig) return;
+    const q = sig.node
+        ? `[data-node="${CSS.escape(sig.node)}"][data-field="${sig.field}"]`
+        : `[data-row="${CSS.escape(sig.row)}"][data-col="${CSS.escape(sig.col)}"][data-field="${sig.field}"]`;
+    const next = document.querySelector(q);
+    if (!next) return;
+    next.focus();
+    try { next.setSelectionRange(sig.pos, sig.pos); } catch (_) { /* number inputs */ }
+}
+
+// Delegated handler for every assumption input (tree table + matrix cells).
+document.addEventListener('input', (ev) => {
+    const t = ev.target;
+    if (!state.analysis) return;
+
+    if (t.classList.contains('assumption')) {
+        const n = (state.analysis.decision_tree || []).find(x => x.id === t.dataset.node);
+        if (!n) return;
+        const v = parseFloat(t.value);
+        if (Number.isNaN(v)) return;
+        n[t.dataset.field] = t.dataset.field === 'probability'
+            ? Math.min(1, Math.max(0, v)) : v;
+        scheduleRecompute();
+    }
+
+    if (t.classList.contains('cellPayoff')) {
+        const m = state.analysis.payoff_matrix;
+        if (!m) return;
+        const cell = m.cells.find(c =>
+            c.row_strategy === t.dataset.row && c.col_strategy === t.dataset.col);
+        const v = parseFloat(t.value);
+        if (!cell || Number.isNaN(v)) return;
+        cell[t.dataset.field] = v;
+        scheduleRecompute();
+    }
+});
+
+$('resetBtn').addEventListener('click', () => {
+    if (!state.original) return;
+    state.analysis = JSON.parse(JSON.stringify(state.original));
+    state.edited = false;
+    render(state.analysis, { isRecompute: true });
+});
 
 function renderGame(m, nash) {
     const section = $('gameSection');
@@ -312,7 +478,11 @@ function renderGame(m, nash) {
             const c = pay[`${rs}||${cs}`];
             const isNE = neCells.has(`${rs}||${cs}`);
             const body = c
-                ? `<span class="text-blue-600 font-semibold">${fmt(c.row_payoff)}</span>, <span class="text-purple-600 font-semibold">${fmt(c.col_payoff)}</span>`
+                ? `<input type="number" step="1" value="${c.row_payoff}" data-row="${esc(rs)}" data-col="${esc(cs)}" data-field="row_payoff"
+                     class="cellPayoff w-14 px-1 py-0.5 text-center border border-blue-200 rounded text-blue-600 font-semibold bg-white">
+                   <span class="text-slate-400">,</span>
+                   <input type="number" step="1" value="${c.col_payoff}" data-row="${esc(rs)}" data-col="${esc(cs)}" data-field="col_payoff"
+                     class="cellPayoff w-14 px-1 py-0.5 text-center border border-purple-200 rounded text-purple-600 font-semibold bg-white">`
                 : '—';
             html += `<td class="p-3 border text-center ${isNE ? 'bg-emerald-100 border-emerald-400 ring-2 ring-emerald-400' : 'border-slate-200'}">
                 ${body}${isNE ? '<div class="text-[10px] text-emerald-700 font-semibold mt-0.5">NASH</div>' : ''}
