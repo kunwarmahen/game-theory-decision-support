@@ -9,7 +9,7 @@ identifies the EV-maximizing path.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple  # noqa: F401
 
 from models import (
     Analysis,
@@ -109,6 +109,73 @@ def sanitize_tree(nodes: List[TreeNode]) -> List[TreeNode]:
                         len(n.children) - len(cleaned), n.id)
         n.children = cleaned
     return deduped
+
+
+def infer_node_types(nodes: List[TreeNode]) -> Tuple[List[TreeNode], List[str]]:
+    """Correct mislabeled node types and report what was changed.
+
+    Models frequently type a gamble as a "decision". That is not cosmetic: a
+    decision node is resolved with max() during backward induction, so a
+    mislabeled risky branch has its downside silently ignored and the analysis
+    becomes over-optimistic. Branch probabilities are the tell — per the prompt
+    spec, chance branches carry probabilities and choices do not.
+
+    Rules:
+    1. A non-root "decision" whose children carry probabilities is really a
+       chance node -> reclassify.
+    2. A root "decision" whose children carry probabilities keeps its type (the
+       root is the choice being analysed); the spurious probabilities are dropped.
+    3. A "decision"/"chance" node with no children is a terminal outcome.
+    4. A "chance" node with no branch probabilities is left alone but flagged,
+       since expected value falls back to equal weighting.
+    """
+    warnings: List[str] = []
+    lookup = {n.id: n for n in nodes}
+    root_ids = {r.id for r in _find_roots(nodes)}
+
+    for node in nodes:
+        children = [lookup[c] for c in node.children if c in lookup]
+
+        # Rule 3: no children -> terminal outcome.
+        if not children and node.type != NodeType.outcome:
+            warnings.append(
+                f"'{node.label}' was typed {node.type.value} but has no branches; "
+                "treated as a final outcome."
+            )
+            node.type = NodeType.outcome
+            continue
+
+        if not children:
+            continue
+
+        probabilistic = [c for c in children if c.probability is not None]
+
+        if node.type == NodeType.decision and probabilistic:
+            if node.id in root_ids:
+                # Rule 2: the root is the decision under analysis; its branches are
+                # choices, so the probabilities are spurious.
+                for c in probabilistic:
+                    c.probability = None
+                warnings.append(
+                    f"Ignored branch probabilities under '{node.label}': its branches "
+                    "are choices you control, not chance events."
+                )
+            else:
+                # Rule 1: probabilities mean chance, not choice.
+                node.type = NodeType.chance
+                warnings.append(
+                    f"'{node.label}' was typed decision but its branches carry "
+                    "probabilities; treated as a chance event so its downside is "
+                    "weighted rather than ignored."
+                )
+        elif node.type == NodeType.chance and not probabilistic:
+            # Rule 4: flag only - compute_expected_values falls back to equal weights.
+            warnings.append(
+                f"Chance event '{node.label}' has no branch probabilities; "
+                "assuming each branch is equally likely."
+            )
+
+    return nodes, warnings
 
 
 def _find_roots(nodes: List[TreeNode]) -> List[TreeNode]:
@@ -359,6 +426,10 @@ def process_analysis(analysis: Analysis) -> Analysis:
     if analysis.decision_tree:
         analysis.decision_tree = sanitize_tree(analysis.decision_tree)
         analysis.decision_tree = reconnect_orphan_roots(analysis.decision_tree)
+        # Correct mislabeled node types before any values are computed, so a gamble
+        # typed as a "decision" doesn't get max()'d and lose its downside.
+        analysis.decision_tree, type_warnings = infer_node_types(analysis.decision_tree)
+        analysis.warnings = type_warnings
         analysis.decision_tree = normalize_tree_probabilities(analysis.decision_tree)
         (
             analysis.decision_tree,

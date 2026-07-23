@@ -6,6 +6,7 @@ import pytest
 from models import Analysis, NodeType, Outcome, TreeNode
 from game_theory import (
     compute_expected_values,
+    infer_node_types,
     normalize_outcomes,
     normalize_tree_probabilities,
     process_analysis,
@@ -215,6 +216,80 @@ def test_cycle_guard_terminates():
     ]
     # Should not hang / recurse infinitely.
     compute_expected_values(nodes)
+
+
+# --------------------------------------------------------------------------- #
+# infer_node_types
+# --------------------------------------------------------------------------- #
+def test_gamble_mislabeled_as_decision_is_reclassified():
+    # "Push hard" is really a gamble: its branches carry probabilities.
+    nodes = [
+        node("root", "decision", ["push"]),
+        node("push", "decision", ["win", "lose"]),
+        node("win", "outcome", [], probability=0.5, payoff=100),
+        node("lose", "outcome", [], probability=0.5, payoff=-100),
+    ]
+    _, warnings = infer_node_types(nodes)
+    push = next(n for n in nodes if n.id == "push")
+    assert push.type == NodeType.chance
+    assert any("chance event" in w for w in warnings)
+
+
+def test_reclassified_gamble_no_longer_ignores_downside():
+    # The whole point: as a "decision" this returns max(100, -100) = 100.
+    # As a chance node it must return the probability-weighted 0.
+    raw = [
+        node("root", "decision", ["push"]),
+        node("push", "decision", ["win", "lose"]),
+        node("win", "outcome", [], probability=0.5, payoff=100),
+        node("lose", "outcome", [], probability=0.5, payoff=-100),
+    ]
+    a = process_analysis(Analysis(decision_tree=raw))
+    assert a.optimal_expected_value == 0.0   # not 100
+    assert a.warnings
+
+
+def test_root_decision_keeps_type_and_drops_spurious_probabilities():
+    nodes = [
+        node("root", "decision", ["a", "b"]),
+        node("a", "outcome", [], probability=0.6, payoff=10),
+        node("b", "outcome", [], probability=0.4, payoff=20),
+    ]
+    _, warnings = infer_node_types(nodes)
+    root = next(n for n in nodes if n.id == "root")
+    assert root.type == NodeType.decision          # root stays a choice
+    assert all(n.probability is None for n in nodes if n.id in ("a", "b"))
+    assert any("choices you control" in w for w in warnings)
+
+
+def test_childless_non_outcome_becomes_outcome():
+    nodes = [node("root", "decision", ["x"]), node("x", "chance", [], payoff=5)]
+    _, warnings = infer_node_types(nodes)
+    assert next(n for n in nodes if n.id == "x").type == NodeType.outcome
+    assert any("final outcome" in w for w in warnings)
+
+
+def test_chance_without_probabilities_is_flagged_not_changed():
+    nodes = [
+        node("root", "chance", ["a", "b"]),
+        node("a", "outcome", [], payoff=10),
+        node("b", "outcome", [], payoff=20),
+    ]
+    _, warnings = infer_node_types(nodes)
+    assert next(n for n in nodes if n.id == "root").type == NodeType.chance
+    assert any("equally likely" in w for w in warnings)
+
+
+def test_well_formed_tree_produces_no_warnings():
+    nodes = [
+        node("root", "decision", ["gamble", "safe"]),
+        node("gamble", "chance", ["win", "lose"]),
+        node("win", "outcome", [], probability=0.5, payoff=100),
+        node("lose", "outcome", [], probability=0.5, payoff=0),
+        node("safe", "outcome", [], payoff=40),
+    ]
+    _, warnings = infer_node_types(nodes)
+    assert warnings == []
 
 
 # --------------------------------------------------------------------------- #

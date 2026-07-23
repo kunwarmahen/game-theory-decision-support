@@ -26,6 +26,10 @@ optional OpenAI provider.
 - **Interactive decision tree** — rendered in the browser with vis-network (color-coded
   node types, probability edge labels, per-node EV, optimal path). No server-side image
   generation, so `matplotlib`/`networkx`/`graphviz` are no longer needed.
+- **Structural sanity checks** — models often type a *gamble* as a "decision", which
+  would make backward induction take `max()` and silently discard the downside. Branch
+  probabilities mean chance, not choice, so such nodes are reclassified before anything
+  is computed — and every repair is reported to you rather than applied silently.
 - **Interactive sensitivity analysis** — the probabilities and payoffs are the model's
   *estimates*, so you can edit them in the UI and the expected values, optimal path and
   Nash equilibria re-solve instantly (via `/api/recompute`, which runs the same engine
@@ -208,6 +212,29 @@ strategy — independent of whatever the model "thinks" the best choice is.
 - **Chance** (amber diamond) — an uncertain event carrying a probability
 - **Outcome** (green ellipse) — a terminal result carrying a payoff
 
+### Why node types matter (and are corrected)
+
+The type decides how a node is valued: a decision takes `max()` of its branches, a chance
+node takes the probability-weighted average. So a gamble mislabeled as a decision keeps
+only its best branch and **loses its downside entirely**.
+
+Concretely — "Push hard" leading to a 50/50 of `+100` / `−100`:
+
+| Typed as | Value | Recommendation |
+|---|---|---|
+| `decision` (wrong) | `max(100, −100)` = **100** | push hard — the risk has vanished |
+| `chance` (correct) | `0.5x100 + 0.5x(−100)` = **0** | accept the safe branch instead |
+
+`infer_node_types` applies these rules before any value is computed:
+1. A non-root `decision` whose branches carry probabilities is reclassified to `chance`.
+2. A root `decision` keeps its type (it *is* the choice being analysed); spurious branch
+   probabilities are dropped.
+3. A `decision`/`chance` node with no branches becomes a terminal `outcome`.
+4. A `chance` node with no branch probabilities is flagged — equal likelihood is assumed.
+
+Repairs appear in a **warnings panel** above the results and in the `warnings` field of
+the API response, so the analysis is never quietly rewritten underneath you.
+
 ## Payoff matrix & Nash equilibria
 
 For **simultaneous** strategic interactions (two players each choosing a discrete
@@ -252,6 +279,7 @@ pytest -k optimal_path -v             # run tests matching a name
 | **Backward induction** | Leaf = payoff, chance = probability-weighted, decision = max, equal-weight fallback for missing probabilities, cycle guard on malformed trees |
 | **Optimal path** | Losing branches and the unchosen decision's subtree are *not* highlighted; stale flags cleared on recompute |
 | **Tree repair** | Duplicate-id merging, dangling and self-reference removal, orphan subtree reattachment |
+| **Node-type inference** | Gamble-typed-as-decision reclassified (and proven to stop discarding downside), root keeps its type, childless nodes become outcomes, unweighted chance nodes flagged, clean trees produce no warnings |
 | **Normalization** | Outcome and sibling probabilities rescaled to sum to 1; all-zero falls back to equal weights |
 | **Integration** | `process_analysis` over a deliberately malformed tree |
 
@@ -278,6 +306,17 @@ curl -s -X POST localhost:8000/api/recompute -H 'Content-Type: application/json'
   {"id":"root","label":"Choose","type":"decision","children":["hi","lo"]},
   {"id":"hi","label":"Push hard","type":"outcome","children":[],"payoff":100},
   {"id":"lo","label":"Play safe","type":"outcome","children":[],"payoff":10}]}'
+
+# Node-type correction: "Push hard" is typed decision but has 50/50 branches.
+# Expect it reclassified to chance, EV 40, and "Accept offer" recommended --
+# NOT the 100 you would get if the downside were discarded.
+curl -s -X POST localhost:8000/api/recompute -H 'Content-Type: application/json' -d '{
+ "decision_tree":[
+  {"id":"root","label":"Negotiate?","type":"decision","children":["push","safe"]},
+  {"id":"push","label":"Push hard","type":"decision","children":["win","lose"]},
+  {"id":"win","label":"They concede","type":"outcome","children":[],"probability":0.5,"payoff":100},
+  {"id":"lose","label":"Offer rescinded","type":"outcome","children":[],"probability":0.5,"payoff":-100},
+  {"id":"safe","label":"Accept offer","type":"outcome","children":[],"payoff":40}]}'
 
 # Full analysis through a local model (slow — 30-90s)
 curl -s -X POST localhost:8000/api/analyze -H 'Content-Type: application/json' \

@@ -127,6 +127,10 @@ class Analysis(BaseModel):
     )
     optimal_expected_value: Optional[float] = Field(default=None)
     nash_equilibria: List[NashEquilibrium] = Field(default_factory=list)
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Structural problems found and repaired in the model's output",
+    )
 
 
 def llm_schema() -> dict:
@@ -139,7 +143,9 @@ def llm_schema() -> dict:
     schema = Analysis.model_json_schema()
     # Trim server-computed properties from the schema we send to the model.
     _strip = {
-        "Analysis": {"optimal_decision", "optimal_expected_value", "nash_equilibria"},
+        "Analysis": {
+            "optimal_decision", "optimal_expected_value", "nash_equilibria", "warnings",
+        },
         "TreeNode": {"expected_value", "is_optimal"},
     }
     for defname, props in _strip.items():
