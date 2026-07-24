@@ -664,10 +664,21 @@ def describe_game(
             key=lambda p: (p.row_payoff - (eq.row_payoff or 0))
             + (p.col_payoff - (eq.col_payoff or 0)),
         )
+        # A Pareto improvement only requires *one* player to gain, so don't claim
+        # both do unless both actually do.
+        row_gain = alt.row_payoff - (eq.row_payoff or 0)
+        col_gain = alt.col_payoff - (eq.col_payoff or 0)
+        row_name = matrix.player_row or "Row"
+        col_name = matrix.player_col or "Column"
+        if row_gain > _EPS and col_gain > _EPS:
+            who = "both players do better"
+        else:
+            gainer = row_name if row_gain > _EPS else col_name
+            who = f"{gainer} does better, and the other is no worse,"
         notes.append(
             f"The equilibrium '{eq.profile}' ({_num(eq.row_payoff or 0)}, "
-            f"{_num(eq.col_payoff or 0)}) is not Pareto efficient: both players do "
-            f"better at '{alt.row_strategy} / {alt.col_strategy}' "
+            f"{_num(eq.col_payoff or 0)}) is not Pareto efficient: {who} "
+            f"at '{alt.row_strategy} / {alt.col_strategy}' "
             f"({_num(alt.row_payoff)}, {_num(alt.col_payoff)}), but neither can move "
             f"there alone — it takes a binding agreement, or repetition and trust."
         )

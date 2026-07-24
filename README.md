@@ -123,16 +123,61 @@ cells highlighted, listed as PURE and/or MIXED below the table.
 
 A Prisoner's-Dilemma shape should yield exactly one pure equilibrium: both betray.
 
-**4. Sensitivity analysis — stress-test the answer**
+**4. Dominance & Pareto efficiency — *why* the equilibrium is what it is**
+
+Scenario 3 above is the clearest demonstration. Once it renders, look at the matrix:
+
+- "Stay silent" is **struck through** for both players, labelled *dominated by Betray* —
+  neither needs to reason about the other to rule it out.
+- The three cells other than mutual betrayal are **outlined in amber** (Pareto efficient).
+  The equilibrium cell is not among them.
+- Below the matrix you get the punchline in words (exact payoffs depend on what the
+  model assigned): *"The equilibrium 'Betray / Betray' (1, 1) is not Pareto efficient:
+  both players do better at 'Stay silent / Stay silent' (3, 3), but neither can move
+  there alone — it takes a binding agreement, or repetition and trust."*
+
+Now edit the payoffs and watch the diagnosis change: raise mutual cooperation above the
+temptation to betray (both cooperate payoffs to `6` against a `5` temptation). The
+strike-through disappears — nothing is dominated any more — and mutual cooperation
+becomes an equilibrium, the only Pareto-efficient cell.
+
+Note what *doesn't* happen: mutual betrayal survives as a second pure equilibrium, and
+its inefficiency note stays. You've turned a dilemma into a **coordination problem** —
+the good outcome is now reachable, but the bad one is still self-enforcing once you're
+in it. A mixed equilibrium appears too (50/50 for both), which is the tell.
+
+**5. Risk appetite — does the recommendation survive your tolerance for downside?**
+
+Open **"Adjust assumptions"** and use the **risk appetite** slider. A clean test: give the
+tree a risky branch (50/50 of `+100` / `−40`, EV `30`) against a safe `25`.
+
+| Slider | Recommendation | Why |
+|---|---|---|
+| Risk-neutral (0) | the gamble | EV 30 beats 25, full stop |
+| Moderately risk-averse (~0.2+) | the safe offer | the gamble's certainty equivalent falls below 25 |
+| Risk-seeking (−0.6) | the gamble | it's now *worth more* than its average |
+
+Watch the **certainty equivalent** appear beside the Expected Value, with the risk
+premium — what you're paying for certainty — underneath. Tree nodes gain a `CE` line,
+and the optimal path (green) re-routes as you drag.
+
+**6. Print the report**
+Click **Print / Save as PDF** on any analysis. Controls, settings and the input box drop
+away; the tree, matrix and assumptions come through, topped with a masthead recording
+the question, model, risk setting, and whether assumptions were adjusted.
+
+**7. Sensitivity analysis — stress-test the answer**
 After any analysis, open **"Adjust assumptions"** under the decision tree, or edit the
 payoff numbers directly in the matrix cells:
 - Lower the payoff of the recommended branch and watch the optimal path (green) flip to
   a different strategy, with the EV delta shown against the model's original estimate.
 - In scenario 2, make a price war mutually devastating (e.g. set both payoffs to `-5`)
   and the equilibrium structure changes — cooperation becomes stable.
-- Click **"reset to model's estimates"** to restore the original analysis.
+- Click **"reset to model's estimates"** to restore the original analysis. (The risk
+  slider is your preference, not the model's estimate, so it survives a reset — the
+  numbers are recomputed at whatever appetite you left it on.)
 
-**5. Non-applicable matrix (expected behaviour)**
+**8. Non-applicable matrix (expected behaviour)**
 > Should I repaint my house this year or wait until next spring?
 
 A one-sided decision has no second player, so the payoff matrix section is correctly
@@ -401,6 +446,49 @@ curl -s -X POST localhost:8000/api/recompute -H 'Content-Type: application/json'
   {"id":"win","label":"They concede","type":"outcome","children":[],"probability":0.5,"payoff":100},
   {"id":"lose","label":"Offer rescinded","type":"outcome","children":[],"probability":0.5,"payoff":-100},
   {"id":"safe","label":"Accept offer","type":"outcome","children":[],"payoff":40}]}'
+
+# Dominance, Pareto efficiency and the computed notes (same PD matrix as above).
+# Expect: "Coop" strictly dominated for BOTH players; pareto_efficient = the three
+# cells other than Defect/Defect; and a game_note reading
+#   "The equilibrium 'Defect / Defect' (1, 1) is not Pareto efficient: both players
+#    do better at 'Coop / Coop' (3, 3), but neither can move there alone [...]"
+curl -s -X POST localhost:8000/api/recompute -H 'Content-Type: application/json' -d '{
+ "payoff_matrix":{"applicable":true,"player_row":"A","player_col":"B",
+  "row_strategies":["Coop","Defect"],"col_strategies":["Coop","Defect"],
+  "cells":[{"row_strategy":"Coop","col_strategy":"Coop","row_payoff":3,"col_payoff":3},
+           {"row_strategy":"Coop","col_strategy":"Defect","row_payoff":0,"col_payoff":5},
+           {"row_strategy":"Defect","col_strategy":"Coop","row_payoff":5,"col_payoff":0},
+           {"row_strategy":"Defect","col_strategy":"Defect","row_payoff":1,"col_payoff":1}]}}' \
+ | python3 -c 'import json,sys; d=json.load(sys.stdin); print(*d["game_notes"], sep="\n")'
+
+# Weak dominance is reported as its own kind, never as strict.
+# Expect: one finding, {"strategy":"Down","kind":"weak","dominated_by":"Up"} -- "Down"
+# ties on Left and loses on Right. Note that B is paid 1 everywhere, so the
+# inefficiency note says "A does better, and the other is no worse" -- NOT "both".
+curl -s -X POST localhost:8000/api/recompute -H 'Content-Type: application/json' -d '{
+ "payoff_matrix":{"applicable":true,"player_row":"A","player_col":"B",
+  "row_strategies":["Up","Down"],"col_strategies":["Left","Right"],
+  "cells":[{"row_strategy":"Up","col_strategy":"Left","row_payoff":2,"col_payoff":1},
+           {"row_strategy":"Up","col_strategy":"Right","row_payoff":3,"col_payoff":1},
+           {"row_strategy":"Down","col_strategy":"Left","row_payoff":2,"col_payoff":1},
+           {"row_strategy":"Down","col_strategy":"Right","row_payoff":1,"col_payoff":1}]}}'
+
+# Risk preference flips the recommendation. The gamble is a 50/50 of +100 / -40
+# (EV 30) against a safe 25.
+#   risk_aversion 0    -> "Risky offer", EV 30,  certainty_equivalent null
+#   risk_aversion 0.5  -> "Safe offer",  EV 25,  certainty_equivalent 25
+# Re-run with -1 (risk-seeking) and the gamble is valued ABOVE its own mean.
+for R in 0 0.5 -1; do
+curl -s -X POST localhost:8000/api/recompute -H 'Content-Type: application/json' -d '{
+ "risk_aversion": '"$R"',
+ "decision_tree":[
+  {"id":"root","label":"Choose","type":"decision","children":["bet","safe"]},
+  {"id":"bet","label":"Risky offer","type":"chance","children":["win","lose"]},
+  {"id":"win","label":"Wins","type":"outcome","children":[],"probability":0.5,"payoff":100},
+  {"id":"lose","label":"Loses","type":"outcome","children":[],"probability":0.5,"payoff":-40},
+  {"id":"safe","label":"Safe offer","type":"outcome","children":[],"payoff":25}]}' \
+ | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["risk_aversion"], d["optimal_decision"], d["optimal_expected_value"], d["optimal_certainty_equivalent"])'
+done
 
 # Full analysis through a local model (slow — 30-90s)
 curl -s -X POST localhost:8000/api/analyze -H 'Content-Type: application/json' \

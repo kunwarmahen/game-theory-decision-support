@@ -168,6 +168,19 @@ def test_notes_report_dominant_strategy_and_inefficiency():
     assert "Cooperate / Cooperate" in inefficiency[0]
 
 
+def test_inefficiency_note_does_not_overclaim_when_one_player_is_indifferent():
+    # Column is paid 1 everywhere, so moving to (Up, Right) gains Row only.
+    # A Pareto improvement needs just one gainer — the note must not say "both".
+    m = matrix(
+        ["Up", "Down"], ["Left", "Right"],
+        [("Up", "Left", 2, 1), ("Up", "Right", 3, 1),
+         ("Down", "Left", 2, 1), ("Down", "Right", 1, 1)],
+    )
+    note = next(n for n in notes_for(m) if "not Pareto efficient" in n)
+    assert "both players do better" not in note
+    assert "R does better, and the other is no worse" in note
+
+
 def test_efficient_equilibrium_produces_no_inefficiency_note():
     # Both players' dominant strategies land on the best cell for everyone.
     m = matrix(
