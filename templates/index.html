@@ -132,7 +132,11 @@
                 <div class="overflow-x-auto">
                     <table id="matrix" class="border-collapse text-sm mx-auto"></table>
                 </div>
-                <p class="text-xs text-slate-400 mt-2">Each cell shows <span class="text-blue-600 font-medium">row payoff</span>, <span class="text-purple-600 font-medium">column payoff</span>. Highlighted cells are pure-strategy Nash equilibria. <span class="text-slate-500">Edit any payoff to re-solve the game instantly.</span></p>
+                <p class="text-xs text-slate-400 mt-2">Each cell shows <span class="text-blue-600 font-medium">row payoff</span>, <span class="text-purple-600 font-medium">column payoff</span>. Green cells are pure-strategy Nash equilibria; cells outlined in amber are Pareto efficient (no other outcome is better for one player without being worse for the other). Struck-through strategies are dominated — a rational player never plays them. <span class="text-slate-500">Edit any payoff to re-solve the game instantly.</span></p>
+
+                <!-- What the computed results mean -->
+                <div id="gameNotes" class="hidden mt-4 space-y-2"></div>
+                <div id="dominanceList" class="mt-4 space-y-1"></div>
                 <div id="nashList" class="mt-4 space-y-2"></div>
             </div>
 
@@ -319,7 +323,11 @@ function render(a, opts = {}) {
         </div>`;
     }).join('');
 
-    renderGame(a.payoff_matrix, a.nash_equilibria || []);
+    renderGame(a.payoff_matrix, a.nash_equilibria || [], {
+        dominated: a.dominated_strategies || [],
+        pareto: a.pareto_efficient || [],
+        notes: a.game_notes || [],
+    });
 
     const tree = a.decision_tree || [];
     $('treeSection').classList.toggle('hidden', tree.length === 0);
@@ -399,6 +407,9 @@ async function recompute() {
             decision_tree: updated.decision_tree,
             payoff_matrix: updated.payoff_matrix,
             nash_equilibria: updated.nash_equilibria,
+            dominated_strategies: updated.dominated_strategies,
+            pareto_efficient: updated.pareto_efficient,
+            game_notes: updated.game_notes,
             optimal_decision: updated.optimal_decision,
             optimal_expected_value: updated.optimal_expected_value,
         });
@@ -462,34 +473,58 @@ $('resetBtn').addEventListener('click', () => {
     render(state.analysis, { isRecompute: true });
 });
 
-function renderGame(m, nash) {
+// Header cell for a strategy, struck through when dominated.
+function strategyHeader(name, side, dominance) {
+    const d = dominance[name];
+    const tone = side === 'row' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700';
+    const align = side === 'row' ? ' text-left' : '';
+    if (!d) return `<th class="p-2 border border-slate-200 ${tone} font-semibold${align}">${esc(name)}</th>`;
+    const strict = d.kind === 'strict';
+    const tag = strict ? 'dominated' : 'weakly dominated';
+    return `<th class="p-2 border border-slate-200 ${tone} font-semibold${align} opacity-60" title="${esc(d.description)}">
+        <span class="line-through decoration-2 ${strict ? 'decoration-red-500' : 'decoration-slate-400'}">${esc(name)}</span>
+        <div class="text-[10px] font-medium normal-case ${strict ? 'text-red-600' : 'text-slate-500'} mt-0.5">${tag} by ${esc(d.dominated_by)}</div>
+    </th>`;
+}
+
+function renderGame(m, nash, extra = {}) {
     const section = $('gameSection');
     if (!m || !m.applicable || !(m.cells || []).length) {
         section.classList.add('hidden');
         return;
     }
+    const dominated = extra.dominated || [];
+    const pareto = extra.pareto || [];
+    const notes = extra.notes || [];
+
     section.classList.remove('hidden');
     $('matrixPlayers').innerHTML =
         `Rows: <span class="text-blue-600 font-semibold">${esc(m.player_row || 'Player 1')}</span> · ` +
         `Columns: <span class="text-purple-600 font-semibold">${esc(m.player_col || 'Player 2')}</span>`;
 
-    // Which cells are pure-strategy equilibria (to highlight)?
+    // Which cells are pure-strategy equilibria / Pareto efficient (to highlight)?
     const neCells = new Set(
         nash.filter(e => e.kind === 'pure')
             .map(e => `${e.row_strategy}||${e.col_strategy}`)
     );
+    const paretoCells = new Set(pareto.map(p => `${p.row_strategy}||${p.col_strategy}`));
+    // Dominated strategies, keyed by name within each player.
+    const rowDom = {}, colDom = {};
+    dominated.forEach(d => { (d.player === 'row' ? rowDom : colDom)[d.strategy] = d; });
+
     const pay = {};
     m.cells.forEach(c => { pay[`${c.row_strategy}||${c.col_strategy}`] = c; });
 
     let html = '<thead><tr><th class="p-2"></th>';
-    m.col_strategies.forEach(cs =>
-        html += `<th class="p-2 border border-slate-200 bg-purple-50 text-purple-700 font-semibold">${esc(cs)}</th>`);
+    m.col_strategies.forEach(cs => html += strategyHeader(cs, 'col', colDom));
     html += '</tr></thead><tbody>';
     m.row_strategies.forEach(rs => {
-        html += `<tr><th class="p-2 border border-slate-200 bg-blue-50 text-blue-700 font-semibold text-left">${esc(rs)}</th>`;
+        html += `<tr>${strategyHeader(rs, 'row', rowDom)}`;
         m.col_strategies.forEach(cs => {
-            const c = pay[`${rs}||${cs}`];
-            const isNE = neCells.has(`${rs}||${cs}`);
+            const key = `${rs}||${cs}`;
+            const c = pay[key];
+            const isNE = neCells.has(key);
+            const isPareto = paretoCells.has(key);
             const body = c
                 ? `<input type="number" step="1" value="${c.row_payoff}" data-row="${esc(rs)}" data-col="${esc(cs)}" data-field="row_payoff"
                      class="cellPayoff w-14 px-1 py-0.5 text-center border border-blue-200 rounded text-blue-600 font-semibold bg-white">
@@ -497,14 +532,34 @@ function renderGame(m, nash) {
                    <input type="number" step="1" value="${c.col_payoff}" data-row="${esc(rs)}" data-col="${esc(cs)}" data-field="col_payoff"
                      class="cellPayoff w-14 px-1 py-0.5 text-center border border-purple-200 rounded text-purple-600 font-semibold bg-white">`
                 : '—';
-            html += `<td class="p-3 border text-center ${isNE ? 'bg-emerald-100 border-emerald-400 ring-2 ring-emerald-400' : 'border-slate-200'}">
-                ${body}${isNE ? '<div class="text-[10px] text-emerald-700 font-semibold mt-0.5">NASH</div>' : ''}
+            const tags = [
+                isNE ? '<span class="text-[10px] text-emerald-700 font-semibold">NASH</span>' : '',
+                isPareto ? '<span class="text-[10px] text-amber-600 font-semibold" title="Pareto efficient: no outcome is better for one player without being worse for the other">EFFICIENT</span>' : '',
+            ].filter(Boolean).join('<span class="text-slate-300 text-[10px]">·</span> ');
+            html += `<td class="p-3 border text-center ${isNE ? 'bg-emerald-100 border-emerald-400 ring-2 ring-emerald-400' : 'border-slate-200'}"
+                ${isPareto ? 'style="outline:2px dashed #f59e0b; outline-offset:-5px"' : ''}>
+                ${body}${tags ? `<div class="flex items-center justify-center gap-1 mt-0.5">${tags}</div>` : ''}
             </td>`;
         });
         html += '</tr>';
     });
     html += '</tbody>';
     $('matrix').innerHTML = html;
+
+    // What the results mean — the most instructive output the tool produces.
+    $('gameNotes').classList.toggle('hidden', notes.length === 0);
+    $('gameNotes').innerHTML = notes.map(n =>
+        `<div class="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex gap-2">
+            <svg class="w-4 h-4 text-primary shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <p class="text-sm text-indigo-900">${esc(n)}</p>
+        </div>`).join('');
+
+    // Dominated strategies
+    $('dominanceList').innerHTML = dominated.map(d =>
+        `<p class="text-xs ${d.kind === 'strict' ? 'text-slate-600' : 'text-slate-500'}">
+            <span class="px-1.5 py-0.5 rounded font-semibold ${d.kind === 'strict' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}">${d.kind.toUpperCase()}</span>
+            ${esc(d.description)}
+        </p>`).join('');
 
     // Equilibria list
     if (!nash.length) {

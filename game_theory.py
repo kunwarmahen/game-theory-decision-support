@@ -13,9 +13,11 @@ from typing import Dict, List, Optional, Tuple  # noqa: F401
 
 from models import (
     Analysis,
+    DominanceFinding,
     NashEquilibrium,
     NodeType,
     Outcome,
+    ParetoCell,
     PayoffMatrix,
     TreeNode,
 )
@@ -319,6 +321,26 @@ def compute_expected_values(
     return nodes, optimal_label, optimal_ev
 
 
+def _payoff_table(matrix: PayoffMatrix) -> Optional[Dict[tuple, tuple]]:
+    """(row_strategy, col_strategy) -> (row_payoff, col_payoff), or None.
+
+    Returns None unless the matrix is fully specified, since every analysis
+    below (equilibria, dominance, Pareto) needs a payoff for every combination.
+    """
+    rows, cols = matrix.row_strategies, matrix.col_strategies
+    if not rows or not cols or not matrix.cells:
+        return None
+
+    pay: Dict[tuple, tuple] = {
+        (c.row_strategy, c.col_strategy): (c.row_payoff, c.col_payoff)
+        for c in matrix.cells
+    }
+    if any((r, c) not in pay for r in rows for c in cols):
+        logger.warning("Payoff matrix is incomplete; skipping game analysis")
+        return None
+    return pay
+
+
 def compute_nash_equilibria(matrix: PayoffMatrix) -> List[NashEquilibrium]:
     """Compute Nash equilibria of a two-player normal-form game.
 
@@ -326,20 +348,11 @@ def compute_nash_equilibria(matrix: PayoffMatrix) -> List[NashEquilibrium]:
     - Mixed-strategy equilibrium for 2 x 2 games (where a pure NE may not exist,
       e.g. Matching Pennies), by making each player indifferent.
     """
+    pay = _payoff_table(matrix)
+    if pay is None:
+        return []
     rows = matrix.row_strategies
     cols = matrix.col_strategies
-    if not rows or not cols or not matrix.cells:
-        return []
-
-    # Build payoff lookup: (row_strategy, col_strategy) -> (row_payoff, col_payoff)
-    pay: Dict[tuple, tuple] = {
-        (c.row_strategy, c.col_strategy): (c.row_payoff, c.col_payoff)
-        for c in matrix.cells
-    }
-    # Require a fully specified matrix.
-    if any((r, c) not in pay for r in rows for c in cols):
-        logger.warning("Payoff matrix is incomplete; skipping Nash computation")
-        return []
 
     equilibria: List[NashEquilibrium] = []
 
@@ -419,6 +432,171 @@ def _mixed_2x2(rows, cols, pay, matrix) -> Optional[NashEquilibrium]:
     )
 
 
+def _num(v: float) -> str:
+    """Format a payoff without a trailing '.0' on whole numbers."""
+    return f"{v:g}"
+
+
+def find_dominated_strategies(matrix: PayoffMatrix) -> List[DominanceFinding]:
+    """Find strategies a rational player should never play.
+
+    Nash equilibria say a cell is stable but not *why*. Dominance does: in the
+    Prisoner's Dilemma, Defect beats Cooperate against every opponent choice, so
+    the tragic equilibrium follows from each player's own arithmetic without any
+    reasoning about the other.
+
+    Strict dominance: `t` pays more than `s` against *every* opponent strategy.
+    Weak dominance: `t` is never worse and is strictly better somewhere — real
+    but a softer argument, so it's reported separately.
+
+    At most one finding per dominated strategy (strict preferred over weak),
+    because "never play s" is the useful conclusion, not every route to it.
+    """
+    pay = _payoff_table(matrix)
+    if pay is None:
+        return []
+
+    rows, cols = matrix.row_strategies, matrix.col_strategies
+    findings: List[DominanceFinding] = []
+
+    # payoff_at(own, other) reads the mover's own payoff, so one routine serves
+    # both players.
+    for player, own, others, payoff_at in (
+        ("row", rows, cols, lambda s, o: pay[(s, o)][0]),
+        ("col", cols, rows, lambda s, o: pay[(o, s)][1]),
+    ):
+        if len(own) < 2 or not others:
+            continue
+        player_name = (matrix.player_row if player == "row" else matrix.player_col) or (
+            "Row" if player == "row" else "Column"
+        )
+        for s in own:
+            best: Optional[DominanceFinding] = None
+            for t in own:
+                if t == s:
+                    continue
+                diffs = [payoff_at(t, o) - payoff_at(s, o) for o in others]
+                if all(d > _EPS for d in diffs):
+                    kind = "strict"
+                elif all(d >= -_EPS for d in diffs) and any(d > _EPS for d in diffs):
+                    kind = "weak"
+                else:
+                    continue
+                if best is not None and not (kind == "strict" and best.kind == "weak"):
+                    continue
+                qualifier = (
+                    "always does better" if kind == "strict" else "never does worse"
+                )
+                best = DominanceFinding(
+                    player=player,
+                    player_name=player_name,
+                    strategy=s,
+                    dominated_by=t,
+                    kind=kind,
+                    description=(
+                        f"{player_name} {qualifier} playing '{t}' than '{s}', "
+                        f"whatever the other player does"
+                        + ("." if kind == "strict" else ", and sometimes better.")
+                    ),
+                )
+                if kind == "strict":
+                    break  # can't do better than a strict dominator
+            if best is not None:
+                findings.append(best)
+
+    return findings
+
+
+def find_pareto_efficient(matrix: PayoffMatrix) -> List[ParetoCell]:
+    """Pure-strategy outcomes that can't be improved for one player without
+    costing the other.
+
+    The contrast with the equilibrium is the point: when the stable outcome is
+    *not* on this list, the players are trapped somewhere they'd both leave if
+    they could commit.
+    """
+    pay = _payoff_table(matrix)
+    if pay is None:
+        return []
+
+    cells = [(r, c) for r in matrix.row_strategies for c in matrix.col_strategies]
+    efficient: List[ParetoCell] = []
+    for r, c in cells:
+        rp, cp = pay[(r, c)]
+        dominated = any(
+            orp >= rp - _EPS
+            and ocp >= cp - _EPS
+            and (orp > rp + _EPS or ocp > cp + _EPS)
+            for orp, ocp in (pay[(r2, c2)] for r2, c2 in cells)
+        )
+        if not dominated:
+            efficient.append(
+                ParetoCell(row_strategy=r, col_strategy=c, row_payoff=rp, col_payoff=cp)
+            )
+    return efficient
+
+
+def describe_game(
+    matrix: PayoffMatrix,
+    equilibria: List[NashEquilibrium],
+    dominated: List[DominanceFinding],
+    pareto: List[ParetoCell],
+) -> List[str]:
+    """Plain-language conclusions drawn from the computed results.
+
+    Two observations worth surfacing: a player who has one strategy that beats
+    all their others (the choice is settled before any strategic reasoning), and
+    an equilibrium that both players would trade away if they could.
+    """
+    notes: List[str] = []
+    rows, cols = matrix.row_strategies, matrix.col_strategies
+
+    # A strategy is dominant when every alternative is strictly dominated by it.
+    for player, own in (("row", rows), ("col", cols)):
+        strict = [d for d in dominated if d.player == player and d.kind == "strict"]
+        if len(strict) != len(own) - 1 or not strict:
+            continue
+        winners = {d.dominated_by for d in strict}
+        if len(winners) != 1:
+            continue
+        winner = winners.pop()
+        if winner in {d.strategy for d in strict}:
+            continue
+        notes.append(
+            f"{strict[0].player_name} has a strictly dominant strategy: '{winner}' "
+            f"pays more than every alternative no matter what the other player does."
+        )
+
+    # An equilibrium both players would leave if they could move together.
+    pure = [e for e in equilibria if e.kind == "pure"]
+    pareto_keys = {(p.row_strategy, p.col_strategy) for p in pareto}
+    inefficient = [e for e in pure if (e.row_strategy, e.col_strategy) not in pareto_keys]
+    for eq in inefficient:
+        better = [
+            p
+            for p in pareto
+            if p.row_payoff >= (eq.row_payoff or 0) - _EPS
+            and p.col_payoff >= (eq.col_payoff or 0) - _EPS
+        ]
+        if not better:
+            continue
+        # The clearest illustration: the alternative that gains both players most.
+        alt = max(
+            better,
+            key=lambda p: (p.row_payoff - (eq.row_payoff or 0))
+            + (p.col_payoff - (eq.col_payoff or 0)),
+        )
+        notes.append(
+            f"The equilibrium '{eq.profile}' ({_num(eq.row_payoff or 0)}, "
+            f"{_num(eq.col_payoff or 0)}) is not Pareto efficient: both players do "
+            f"better at '{alt.row_strategy} / {alt.col_strategy}' "
+            f"({_num(alt.row_payoff)}, {_num(alt.col_payoff)}), but neither can move "
+            f"there alone — it takes a binding agreement, or repetition and trust."
+        )
+
+    return notes
+
+
 def process_analysis(analysis: Analysis) -> Analysis:
     """Normalize probabilities and compute expected values in place."""
     analysis.outcomes = normalize_outcomes(analysis.outcomes)
@@ -437,8 +615,17 @@ def process_analysis(analysis: Analysis) -> Analysis:
             analysis.optimal_expected_value,
         ) = compute_expected_values(analysis.decision_tree)
 
-    # Nash equilibria (only when the model provided an applicable payoff matrix).
+    # Normal-form analysis (only when the model provided an applicable matrix).
     if analysis.payoff_matrix and analysis.payoff_matrix.applicable:
-        analysis.nash_equilibria = compute_nash_equilibria(analysis.payoff_matrix)
+        matrix = analysis.payoff_matrix
+        analysis.nash_equilibria = compute_nash_equilibria(matrix)
+        analysis.dominated_strategies = find_dominated_strategies(matrix)
+        analysis.pareto_efficient = find_pareto_efficient(matrix)
+        analysis.game_notes = describe_game(
+            matrix,
+            analysis.nash_equilibria,
+            analysis.dominated_strategies,
+            analysis.pareto_efficient,
+        )
 
     return analysis
