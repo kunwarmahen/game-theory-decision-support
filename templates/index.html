@@ -22,10 +22,51 @@
         #tree { height: 520px; border-radius: .75rem; }
         .spinner { border-top-color: transparent; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .print-only { display: none; }
+
+        /* Print / Save-as-PDF: the conclusions have to be able to leave the browser.
+           The report is the same DOM with the controls stripped out, so it can never
+           drift from what's on screen. */
+        @media print {
+            @page { margin: 14mm; }
+            /* !important: the utility class on <body> outranks a bare element rule. */
+            body { background: #fff !important; }
+            .no-print { display: none !important; }
+            .print-only { display: block; }
+            main { max-width: none; padding: 0; }
+            #results { margin-top: 0; }
+            /* Cards: flat on paper, and never split across a page. */
+            #results > div, #outcomes > div {
+                box-shadow: none !important;
+                break-inside: avoid; page-break-inside: avoid;
+            }
+            #results > div { border: 1px solid #cbd5e1; }
+            /* Editable assumptions become plain figures. An explicit narrow width
+               is needed: `auto` falls back to the input's intrinsic ~20ch, which
+               wraps the two payoffs in a matrix cell onto separate lines. */
+            input[type="number"] {
+                border: none !important; background: transparent !important;
+                padding: 0 !important; width: 2.6em !important;
+                text-align: center; font-weight: 600;
+                -moz-appearance: textfield; appearance: textfield;
+                color-adjust: exact; -webkit-print-color-adjust: exact;
+            }
+            #matrix th { white-space: nowrap; }
+            input[type="number"]::-webkit-outer-spin-button,
+            input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+            /* Keep the payoff-matrix and Nash highlighting on paper. */
+            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            #tree { height: 420px; break-inside: avoid; page-break-inside: avoid; }
+            #assumptionsBox summary { list-style: none; }
+            details { break-inside: auto; }
+            #outcomes { display: block; }
+            #outcomes > div { margin-bottom: 10px; }
+            a[href]::after { content: ""; }
+        }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800">
-    <header class="gradient-bg text-white shadow-lg">
+    <header class="gradient-bg text-white shadow-lg no-print">
         <div class="container mx-auto px-4 py-6 flex items-center justify-between">
             <div>
                 <h1 class="text-2xl md:text-3xl font-bold tracking-tight">Game Theory Decision Analyzer</h1>
@@ -38,7 +79,7 @@
     </header>
 
     <main class="container mx-auto px-4 py-8 max-w-6xl">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
             <!-- Input -->
             <section class="lg:col-span-2">
                 <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200 p-6 animate-fadeIn">
@@ -83,10 +124,26 @@
         </div>
 
         <!-- Error -->
-        <div id="errorBox" class="hidden mt-6 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm"></div>
+        <div id="errorBox" class="hidden no-print mt-6 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm"></div>
 
         <!-- Results -->
         <div id="results" class="hidden mt-8 space-y-6">
+            <!-- Report masthead: only ever visible on paper, so the printout says
+                 what was asked, when, and under which assumptions. -->
+            <div class="print-only" id="printHeader">
+                <h1 style="font-size:20px;font-weight:700;margin-bottom:2px">Game Theory Decision Analysis</h1>
+                <p style="font-size:11px;color:#475569" id="printMeta"></p>
+                <p style="font-size:12px;margin-top:8px;padding:8px;border-left:3px solid #cbd5e1;color:#334155" id="printQuery"></p>
+            </div>
+
+            <div class="no-print flex justify-end">
+                <button id="printBtn"
+                    class="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-primary border border-slate-300 hover:border-primary bg-white rounded-lg px-3 py-1.5 transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                    Print / Save as PDF
+                </button>
+            </div>
+
             <!-- Structural repairs applied to the model's output -->
             <div id="warningsBox" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-4">
                 <p class="text-sm font-semibold text-amber-800 flex items-center gap-2">
@@ -174,11 +231,11 @@
                                 <span id="riskLabel" class="text-xs font-medium text-slate-500">Risk-neutral — maximize expected value</span>
                             </div>
                             <input id="riskSlider" type="range" min="-1" max="1" step="0.1" value="0"
-                                class="w-full mt-2 accent-primary cursor-pointer">
-                            <div class="flex justify-between text-[11px] text-slate-400">
+                                class="no-print w-full mt-2 accent-primary cursor-pointer">
+                            <div class="no-print flex justify-between text-[11px] text-slate-400">
                                 <span>risk-seeking</span><span>neutral</span><span>risk-averse</span>
                             </div>
-                            <p class="text-xs text-slate-500 mt-2">
+                            <p class="no-print text-xs text-slate-500 mt-2">
                                 A risk-averse decider prefers a smaller sure thing to a larger gamble. Move the slider
                                 to see whether the recommendation survives your actual appetite for downside.
                             </p>
@@ -265,6 +322,8 @@ async function analyze() {
 
     setLoading(true);
     $('errorBox').classList.add('hidden');
+    state.query = query;                 // recorded on the printed report
+    state.model = $('model').value || null;
     try {
         const r = await fetch('/api/analyze', {
             method: 'POST',
@@ -356,8 +415,36 @@ function render(a, opts = {}) {
     const tree = a.decision_tree || [];
     $('treeSection').classList.toggle('hidden', tree.length === 0);
     if (tree.length) { drawTree(tree); renderAssumptions(tree); }
+    renderPrintHeader();
     if (!opts.isRecompute) $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+// ---- Print report --------------------------------------------------------
+// The printout is the live DOM with the controls hidden, so it can't drift from
+// what's on screen; it only needs a masthead recording the provenance.
+function renderPrintHeader() {
+    const parts = [new Date().toLocaleString()];
+    if (state.model) parts.push(`model: ${state.model}`);
+    if (state.edited) parts.push('assumptions adjusted from the model\'s estimates');
+    const words = riskWording(state.riskAversion);
+    parts.push(words.badge ? words.text.split(' — ')[0].toLowerCase() : 'risk-neutral');
+    $('printMeta').textContent = parts.join('  ·  ');
+    $('printQuery').textContent = state.query || '';
+}
+
+$('printBtn').addEventListener('click', () => window.print());
+
+// A collapsed <details> prints as an empty box, and the tree canvas keeps
+// whatever pan/zoom the user left it at — fix both, then put them back.
+let assumptionsWasOpen = false;
+window.addEventListener('beforeprint', () => {
+    assumptionsWasOpen = $('assumptionsBox').open;
+    $('assumptionsBox').open = true;
+    if (network) network.fit({ animation: false });
+});
+window.addEventListener('afterprint', () => {
+    $('assumptionsBox').open = assumptionsWasOpen;
+});
 
 // ---- Risk preference -----------------------------------------------------
 // The slider is dimensionless: the server scales it to the payoff range in play,
@@ -692,7 +779,9 @@ function drawTree(tree) {
         const metric = isLeaf
             ? (n.payoff != null ? `payoff ${fmt(n.payoff)}` : '')
             : (n.expected_value != null
-                ? `EV ${fmt(n.expected_value)}` + (risky ? ` · CE ${fmt(n.certainty_equivalent)}` : '')
+                // Stacked, not inline: a wide node label collides with the edge
+            // probability labels in the hierarchical layout.
+            ? `EV ${fmt(n.expected_value)}` + (risky ? `\nCE ${fmt(n.certainty_equivalent)}` : '')
                 : '');
         const label = `<b>${shortLabel(n.label)}</b>${metric ? '\n' + metric : ''}`;
         // Full detail on hover.
