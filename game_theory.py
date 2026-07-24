@@ -9,6 +9,7 @@ identifies the EV-maximizing path.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Dict, List, Optional, Tuple  # noqa: F401
 
 from models import (
@@ -25,6 +26,12 @@ from models import (
 logger = logging.getLogger(__name__)
 
 _EPS = 1e-9
+
+# How sharply the risk-aversion slider bites: at full aversion the risk-tolerance
+# constant is half the payoff spread. Tuned so the whole slider is useful — a
+# steeper curve pushes even mild settings into refusing every gamble, which
+# leaves most of the range indistinguishable.
+_RISK_CURVATURE = 2.0
 
 
 def normalize_outcomes(outcomes: List[Outcome]) -> List[Outcome]:
@@ -214,9 +221,56 @@ def reconnect_orphan_roots(nodes: List[TreeNode]) -> List[TreeNode]:
     return nodes
 
 
+def risk_tolerance_for(nodes: List[TreeNode], risk_aversion: float) -> Optional[float]:
+    """Convert a dimensionless risk appetite into a risk-tolerance constant R.
+
+    Payoffs are on an arbitrary per-analysis scale, so an absolute R would mean
+    nothing to the user. We scale it to the spread of the payoffs actually in
+    play: at risk_aversion = 1, R is half that spread, which prices a coin-flip
+    over the full range at roughly 57% of its expected value.
+
+    Returns None when there is no risk to price (no payoffs, or all identical),
+    or when the decider is risk-neutral.
+    """
+    if abs(risk_aversion) < _EPS:
+        return None
+    payoffs = [n.payoff for n in nodes if n.payoff is not None]
+    if not payoffs:
+        return None
+    spread = max(payoffs) - min(payoffs)
+    if spread <= _EPS:
+        return None
+    return spread / (risk_aversion * _RISK_CURVATURE)
+
+
+def _certainty_equivalent(branches: List[Tuple[float, float]], R: float) -> float:
+    """The guaranteed value a decider would accept in place of a gamble.
+
+    Uses exponential (constant absolute risk aversion) utility
+    u(x) = 1 - e^(-x/R). CARA is what makes this usable inside backward
+    induction: folding certainty equivalents up the tree gives the same answer
+    as evaluating the whole compound lottery at once, so every node's number
+    stays in payoff units and remains directly comparable to its EV.
+
+    R > 0 is risk-averse (CE below the mean), R < 0 risk-seeking.
+
+    The sum is computed with a log-sum-exp shift; without it a large
+    payoff-to-R ratio overflows exp() and the whole branch collapses to -inf.
+    """
+    if not branches:
+        return 0.0
+    exponents = [-value / R for _, value in branches]
+    shift = max(exponents)
+    total = sum(p * math.exp(e - shift) for (p, _), e in zip(branches, exponents))
+    if total <= 0:  # degenerate weights; fall back to the plain mean
+        return sum(p * v for p, v in branches)
+    return -R * (shift + math.log(total))
+
+
 def compute_expected_values(
     nodes: List[TreeNode],
-) -> Tuple[List[TreeNode], Optional[str], Optional[float]]:
+    risk_aversion: float = 0.0,
+) -> Tuple[List[TreeNode], Optional[str], Optional[float], Optional[float]]:
     """Backward induction over the decision tree.
 
     Node value rules:
@@ -224,70 +278,94 @@ def compute_expected_values(
     - chance node:  sum(child.probability * child.value)
     - decision node: max(child.value); the maximizing child is marked optimal
 
-    Returns the annotated nodes plus the optimal first-decision label and its EV.
+    With `risk_aversion` non-zero each node also gets a certainty equivalent,
+    and decisions are made on *that* rather than on raw expected value — a
+    risk-averse decider will refuse a gamble whose EV is higher. The expected
+    value reported alongside is the EV of the path risk preference actually
+    chose, so the two numbers describe the same recommendation.
+
+    Returns the annotated nodes, the optimal first-decision label, its EV, and
+    its certainty equivalent (None when risk-neutral).
     """
     lookup: Dict[str, TreeNode] = {n.id: n for n in nodes}
     visiting: set[str] = set()
-    best_child: Dict[str, str] = {}  # decision id -> its EV-maximizing child id
+    best_child: Dict[str, str] = {}  # decision id -> its value-maximizing child id
+    R = risk_tolerance_for(nodes, risk_aversion)
 
     # Clear any previous results so recomputation (e.g. after the user edits an
     # assumption) can't leave a stale optimal path or expected value behind.
     for n in nodes:
         n.expected_value = None
+        n.certainty_equivalent = None
         n.is_optimal = False
 
-    def value_of(node_id: str) -> float:
+    def record(node: TreeNode, ev: float, ce: float) -> Tuple[float, float]:
+        node.expected_value = ev
+        node.certainty_equivalent = ce if R is not None else None
+        return ev, ce
+
+    def value_of(node_id: str) -> Tuple[float, float]:
+        """Return (expected value, certainty equivalent) for a node."""
         node = lookup.get(node_id)
         if node is None:
-            return 0.0
+            return 0.0, 0.0
         if node_id in visiting:  # cycle guard against malformed trees
             logger.warning("Cycle detected at node '%s'; treating as leaf", node_id)
-            return node.payoff or 0.0
+            return (node.payoff or 0.0,) * 2
         visiting.add(node_id)
 
         real_children = [c for c in node.children if c in lookup]
 
         if not real_children:
             # Terminal node: value is its payoff (probability-weighting is applied
-            # by the parent chance node, not here).
-            node.expected_value = node.payoff if node.payoff is not None else 0.0
+            # by the parent chance node, not here). A certain payoff is worth its
+            # face value at any risk appetite.
+            payoff = node.payoff if node.payoff is not None else 0.0
+            result = record(node, payoff, payoff)
             visiting.discard(node_id)
-            return node.expected_value
+            return result
 
         if node.type == NodeType.decision:
-            best_val = float("-inf")
+            best: Optional[Tuple[float, float]] = None
             chosen = None
             for cid in real_children:
-                cval = value_of(cid)
-                if cval > best_val:
-                    best_val, chosen = cval, cid
-            node.expected_value = best_val if chosen is not None else 0.0
+                cev, cce = value_of(cid)
+                # Choose on the risk-adjusted value; when risk-neutral it equals the EV.
+                if best is None or cce > best[1]:
+                    best, chosen = (cev, cce), cid
+            result = record(node, *(best if chosen is not None else (0.0, 0.0)))
             if chosen is not None:
                 best_child[node_id] = chosen
             visiting.discard(node_id)
-            return node.expected_value
+            return result
 
         # chance node (or anything with children that isn't a decision):
         # expected value = weighted sum over children.
+        branches: List[Tuple[float, float]] = []  # (probability, child CE)
         total = 0.0
         for cid in real_children:
             child = lookup[cid]
             prob = child.probability if child.probability is not None else (
                 1.0 / len(real_children)
             )
-            total += prob * value_of(cid)
-        node.expected_value = total
+            cev, cce = value_of(cid)
+            total += prob * cev
+            branches.append((prob, cce))
+        ce = _certainty_equivalent(branches, R) if R is not None else total
+        result = record(node, total, ce)
         visiting.discard(node_id)
-        return node.expected_value
+        return result
 
-    # First pass: compute expected values for every node.
+    # First pass: compute values for every node.
     roots = _find_roots(nodes)
     primary_root: Optional[TreeNode] = None
     optimal_ev: Optional[float] = None
+    optimal_ce: Optional[float] = None
+    best_root_value: Optional[float] = None
     for root in roots:
-        ev = value_of(root.id)
-        if optimal_ev is None or ev > optimal_ev:
-            optimal_ev, primary_root = ev, root
+        ev, ce = value_of(root.id)
+        if best_root_value is None or ce > best_root_value:
+            best_root_value, optimal_ev, optimal_ce, primary_root = ce, ev, ce, root
 
     # Second pass: mark ONLY the optimal path from the chosen root. At decisions we
     # follow the single best child; at chance nodes every child is a possible
@@ -318,7 +396,7 @@ def compute_expected_values(
         else:
             optimal_label = primary_root.label
 
-    return nodes, optimal_label, optimal_ev
+    return nodes, optimal_label, optimal_ev, (optimal_ce if R is not None else None)
 
 
 def _payoff_table(matrix: PayoffMatrix) -> Optional[Dict[tuple, tuple]]:
@@ -597,9 +675,14 @@ def describe_game(
     return notes
 
 
-def process_analysis(analysis: Analysis) -> Analysis:
-    """Normalize probabilities and compute expected values in place."""
+def process_analysis(analysis: Analysis, risk_aversion: float = 0.0) -> Analysis:
+    """Normalize probabilities and compute expected values in place.
+
+    `risk_aversion` runs from -1 (risk-seeking) through 0 (risk-neutral, the
+    default) to 1 (strongly risk-averse); see `compute_expected_values`.
+    """
     analysis.outcomes = normalize_outcomes(analysis.outcomes)
+    analysis.risk_aversion = risk_aversion
 
     if analysis.decision_tree:
         analysis.decision_tree = sanitize_tree(analysis.decision_tree)
@@ -613,7 +696,8 @@ def process_analysis(analysis: Analysis) -> Analysis:
             analysis.decision_tree,
             analysis.optimal_decision,
             analysis.optimal_expected_value,
-        ) = compute_expected_values(analysis.decision_tree)
+            analysis.optimal_certainty_equivalent,
+        ) = compute_expected_values(analysis.decision_tree, risk_aversion)
 
     # Normal-form analysis (only when the model provided an applicable matrix).
     if analysis.payoff_matrix and analysis.payoff_matrix.applicable:

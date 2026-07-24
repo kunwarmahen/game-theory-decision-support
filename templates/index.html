@@ -100,8 +100,9 @@
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <p class="text-xs uppercase tracking-wide text-accent font-semibold">Recommended strategy (max expected value)</p>
+                            <p id="recommendedLabel" class="text-xs uppercase tracking-wide text-accent font-semibold">Recommended strategy (max expected value)</p>
                             <span id="editedBadge" class="hidden px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-semibold">ADJUSTED</span>
+                            <span id="riskBadge" class="hidden px-2 py-0.5 bg-indigo-100 text-primary rounded text-xs font-semibold"></span>
                             <button id="resetBtn" class="hidden text-xs text-primary hover:underline font-medium">reset to model's estimates</button>
                         </div>
                         <h3 id="optimalDecision" class="text-xl font-bold mt-1"></h3>
@@ -111,6 +112,11 @@
                         <p class="text-xs text-emerald-700 font-medium">Expected Value</p>
                         <p id="optimalEV" class="text-2xl font-bold text-emerald-600"></p>
                         <p id="evDelta" class="text-xs font-medium mt-0.5"></p>
+                        <div id="ceBox" class="hidden mt-2 pt-2 border-t border-emerald-200">
+                            <p class="text-xs text-emerald-700 font-medium" title="The guaranteed payoff you'd accept instead of this gamble, given your risk appetite">Certainty equivalent</p>
+                            <p id="optimalCE" class="text-lg font-bold text-emerald-700"></p>
+                            <p id="riskPremium" class="text-[11px] text-slate-500"></p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -160,6 +166,23 @@
                         Adjust assumptions — test how sensitive the result is
                     </summary>
                     <div class="px-4 pb-4">
+                        <!-- Risk appetite: maximizing raw expected value assumes indifference
+                             between a coin-flip and its average, which few deciders are. -->
+                        <div class="my-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <div class="flex items-baseline justify-between gap-2 flex-wrap">
+                                <label for="riskSlider" class="text-sm font-semibold text-slate-700">Your risk appetite</label>
+                                <span id="riskLabel" class="text-xs font-medium text-slate-500">Risk-neutral — maximize expected value</span>
+                            </div>
+                            <input id="riskSlider" type="range" min="-1" max="1" step="0.1" value="0"
+                                class="w-full mt-2 accent-primary cursor-pointer">
+                            <div class="flex justify-between text-[11px] text-slate-400">
+                                <span>risk-seeking</span><span>neutral</span><span>risk-averse</span>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-2">
+                                A risk-averse decider prefers a smaller sure thing to a larger gamble. Move the slider
+                                to see whether the recommendation survives your actual appetite for downside.
+                            </p>
+                        </div>
                         <p class="text-xs text-slate-500 my-2">
                             These numbers are the model's estimates. Edit them to stress-test the conclusion —
                             the expected values, optimal path and equilibria recompute instantly.
@@ -181,7 +204,7 @@
     </main>
 
 <script>
-const state = { provider: 'ollama', models: {} };
+const state = { provider: 'ollama', models: {}, riskAversion: 0 };
 const $ = (id) => document.getElementById(id);
 
 async function loadModels() {
@@ -292,6 +315,7 @@ function render(a, opts = {}) {
     $('recommendedOutcome').textContent = a.recommended_outcome || '';
     $('optimalEV').textContent = fmt(a.optimal_expected_value);
     renderEvDelta(a.optimal_expected_value);
+    renderRisk(a);
     $('editedBadge').classList.toggle('hidden', !state.edited);
     $('resetBtn').classList.toggle('hidden', !state.edited);
     $('summary').textContent = a.summary || '';
@@ -335,6 +359,46 @@ function render(a, opts = {}) {
     if (!opts.isRecompute) $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// ---- Risk preference -----------------------------------------------------
+// The slider is dimensionless: the server scales it to the payoff range in play,
+// because payoffs are on an arbitrary per-analysis scale.
+function riskWording(v) {
+    if (Math.abs(v) < 0.05) return { text: 'Risk-neutral — maximize expected value', badge: '' };
+    const strength = Math.abs(v) >= 0.7 ? 'Strongly' : (Math.abs(v) >= 0.35 ? 'Moderately' : 'Mildly');
+    return v > 0
+        ? { text: `${strength} risk-averse — a sure thing beats a fair gamble`, badge: `${strength.toUpperCase()} RISK-AVERSE` }
+        : { text: `${strength} risk-seeking — a gamble beats its average`, badge: `${strength.toUpperCase()} RISK-SEEKING` };
+}
+
+function renderRisk(a) {
+    const v = state.riskAversion;
+    const words = riskWording(v);
+    $('riskLabel').textContent = words.text;
+    $('riskBadge').textContent = words.badge;
+    $('riskBadge').classList.toggle('hidden', !words.badge);
+    $('recommendedLabel').textContent = words.badge
+        ? 'Recommended strategy (risk-adjusted)'
+        : 'Recommended strategy (max expected value)';
+
+    const ce = a.optimal_certainty_equivalent;
+    const ev = a.optimal_expected_value;
+    $('ceBox').classList.toggle('hidden', ce == null);
+    if (ce == null) return;
+    $('optimalCE').textContent = fmt(ce);
+    // The gap between EV and CE is the price of the uncertainty on this path;
+    // zero means the recommended path carries no risk at all.
+    const premium = (ev == null) ? null : ev - ce;
+    $('riskPremium').textContent = (premium == null || Math.abs(premium) < 0.005)
+        ? 'no risk on this path'
+        : `${fmt(Math.abs(premium))} ${premium > 0 ? 'risk premium' : 'risk bonus'}`;
+}
+
+$('riskSlider').addEventListener('input', (e) => {
+    state.riskAversion = parseFloat(e.target.value) || 0;
+    $('riskLabel').textContent = riskWording(state.riskAversion).text;  // instant feedback
+    if (state.analysis) scheduleRecompute({ markEdited: false });
+});
+
 // ---- Sensitivity analysis ------------------------------------------------
 function renderEvDelta(current) {
     const el = $('evDelta');
@@ -356,9 +420,11 @@ function renderAssumptions(tree) {
     if (!rows.length) { $('assumptionsBox').classList.add('hidden'); return; }
     $('assumptionsBox').classList.remove('hidden');
 
+    const showCE = tree.some(n => n.certainty_equivalent != null);
     let html = `<thead><tr class="text-left text-xs text-slate-500 border-b border-slate-200">
         <th class="py-2">Node</th><th class="py-2">Type</th>
-        <th class="py-2 w-32">Probability</th><th class="py-2 w-32">Payoff</th><th class="py-2 w-24">EV</th></tr></thead><tbody>`;
+        <th class="py-2 w-32">Probability</th><th class="py-2 w-32">Payoff</th><th class="py-2 w-24">EV</th>
+        ${showCE ? '<th class="py-2 w-24" title="Certainty equivalent — the sure payoff worth as much as this node\'s gamble">CE</th>' : ''}</tr></thead><tbody>`;
     rows.forEach(n => {
         const isLeaf = !(n.children || []).some(c => byId[c]);
         const probInput = n.probability != null
@@ -377,18 +443,19 @@ function renderAssumptions(tree) {
             <td class="py-2 pr-2">${probInput}</td>
             <td class="py-2 pr-2">${payInput}</td>
             <td class="py-2 text-xs font-semibold ${n.is_optimal ? 'text-emerald-600' : 'text-slate-500'}">${fmt(n.expected_value)}</td>
+            ${showCE ? `<td class="py-2 text-xs font-semibold ${n.is_optimal ? 'text-emerald-600' : 'text-slate-500'}">${fmt(n.certainty_equivalent)}</td>` : ''}
         </tr>`;
     });
     $('assumptions').innerHTML = html + '</tbody>';
 }
 
 let recomputeTimer = null;
-function scheduleRecompute() {
+function scheduleRecompute(opts = {}) {
     clearTimeout(recomputeTimer);
-    recomputeTimer = setTimeout(recompute, 350);  // debounce typing
+    recomputeTimer = setTimeout(() => recompute(opts), 350);  // debounce typing
 }
 
-async function recompute() {
+async function recompute(opts = {}) {
     const a = state.analysis;
     if (!a) return;
     try {
@@ -398,6 +465,7 @@ async function recompute() {
             body: JSON.stringify({
                 decision_tree: a.decision_tree || [],
                 payoff_matrix: a.payoff_matrix || null,
+                risk_aversion: state.riskAversion,
             })
         });
         if (!r.ok) throw new Error('Recompute failed');
@@ -412,8 +480,11 @@ async function recompute() {
             game_notes: updated.game_notes,
             optimal_decision: updated.optimal_decision,
             optimal_expected_value: updated.optimal_expected_value,
+            optimal_certainty_equivalent: updated.optimal_certainty_equivalent,
         });
-        state.edited = true;
+        // Risk appetite is the user's own preference, not a change to the model's
+        // estimates, so it doesn't mark the analysis as adjusted.
+        if (opts.markEdited !== false) state.edited = true;
         withFocusPreserved(() => render(state.analysis, { isRecompute: true }));
     } catch (e) {
         showError(e.message);
@@ -470,7 +541,10 @@ $('resetBtn').addEventListener('click', () => {
     if (!state.original) return;
     state.analysis = JSON.parse(JSON.stringify(state.original));
     state.edited = false;
-    render(state.analysis, { isRecompute: true });
+    // The stored original is risk-neutral; re-apply the current appetite so the
+    // numbers on screen still match where the slider is sitting.
+    if (Math.abs(state.riskAversion) > 1e-9) recompute({ markEdited: false });
+    else render(state.analysis, { isRecompute: true });
 });
 
 // Header cell for a strategy, struck through when dominated.
@@ -611,14 +685,21 @@ function drawTree(tree) {
         const c = colors[n.type] || { bg: '#e2e8f0', bd: '#94a3b8' };
         // Leaves: show payoff (EV == payoff there). Internal nodes: show EV.
         const isLeaf = !(n.children && n.children.some(cid => byId[cid]));
+        // Under a risk preference the certainty equivalent is what the decision
+        // was actually made on, so it belongs on the node next to the EV.
+        const risky = !isLeaf && n.certainty_equivalent != null &&
+            Math.abs(n.certainty_equivalent - (n.expected_value ?? 0)) > 0.005;
         const metric = isLeaf
             ? (n.payoff != null ? `payoff ${fmt(n.payoff)}` : '')
-            : (n.expected_value != null ? `EV ${fmt(n.expected_value)}` : '');
+            : (n.expected_value != null
+                ? `EV ${fmt(n.expected_value)}` + (risky ? ` · CE ${fmt(n.certainty_equivalent)}` : '')
+                : '');
         const label = `<b>${shortLabel(n.label)}</b>${metric ? '\n' + metric : ''}`;
         // Full detail on hover.
         const title = `${n.label}\n${n.type}` +
             (n.probability != null ? ` · p=${Math.round(n.probability * 100)}%` : '') +
             (n.expected_value != null ? `\nEV = ${fmt(n.expected_value)}` : '') +
+            (n.certainty_equivalent != null ? `\nCertainty equivalent = ${fmt(n.certainty_equivalent)}` : '') +
             (n.payoff != null ? `\npayoff = ${fmt(n.payoff)}` : '') +
             (n.is_optimal ? '\n★ on optimal path' : '');
         return {

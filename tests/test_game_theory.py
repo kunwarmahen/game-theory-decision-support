@@ -151,7 +151,7 @@ def test_decision_node_takes_max_and_marks_only_optimal_path():
         node("hi", "outcome", [], payoff=100),
         node("lo", "outcome", [], payoff=10),
     ]
-    _, label, ev = compute_expected_values(nodes)
+    _, label, ev, _ce = compute_expected_values(nodes)
     root = next(n for n in nodes if n.id == "root")
     hi = next(n for n in nodes if n.id == "hi")
     lo = next(n for n in nodes if n.id == "lo")
@@ -203,7 +203,7 @@ def test_recompute_clears_stale_optimal_path():
 
     # Flip the payoffs: "lo" is now the better branch.
     ids["hi"].payoff = 5
-    _, label, ev = compute_expected_values(nodes)
+    _, label, ev, _ce = compute_expected_values(nodes)
     assert ev == 10 and label == "lo"
     assert ids["lo"].is_optimal
     assert not ids["hi"].is_optimal  # stale flag must be cleared

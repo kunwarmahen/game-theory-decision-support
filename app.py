@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from config import settings
 from game_theory import process_analysis
@@ -51,6 +51,12 @@ class RecomputeRequest(BaseModel):
 
     decision_tree: List[TreeNode] = []
     payoff_matrix: Optional[PayoffMatrix] = None
+    risk_aversion: float = Field(
+        default=0.0,
+        ge=-1.0,
+        le=1.0,
+        description="-1 risk-seeking, 0 risk-neutral, 1 strongly risk-averse",
+    )
 
 
 class AnalysisRequest(BaseModel):
@@ -137,7 +143,7 @@ async def recompute(req: RecomputeRequest):
         decision_tree=req.decision_tree,
         payoff_matrix=req.payoff_matrix,
     )
-    return process_analysis(analysis)
+    return process_analysis(analysis, req.risk_aversion)
 
 
 def main():

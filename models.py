@@ -61,6 +61,10 @@ class TreeNode(BaseModel):
 
     # Computed server-side by backward induction (not requested from the LLM).
     expected_value: Optional[float] = Field(default=None)
+    certainty_equivalent: Optional[float] = Field(
+        default=None,
+        description="Guaranteed payoff worth the same as this node's gamble to a risk-averse decider; None when risk-neutral",
+    )
     is_optimal: bool = Field(
         default=False, description="True if on the optimal (EV-maximizing) path"
     )
@@ -151,6 +155,16 @@ class Analysis(BaseModel):
         default=None, description="Label of the EV-maximizing first decision"
     )
     optimal_expected_value: Optional[float] = Field(default=None)
+    optimal_certainty_equivalent: Optional[float] = Field(
+        default=None,
+        description="Certainty equivalent of the recommended path; None when risk-neutral",
+    )
+    risk_aversion: float = Field(
+        default=0.0,
+        ge=-1.0,
+        le=1.0,
+        description="Risk appetite applied: 0 risk-neutral, >0 risk-averse, <0 risk-seeking",
+    )
     nash_equilibria: List[NashEquilibrium] = Field(default_factory=list)
     dominated_strategies: List[DominanceFinding] = Field(default_factory=list)
     pareto_efficient: List[ParetoCell] = Field(default_factory=list)
@@ -175,10 +189,11 @@ def llm_schema() -> dict:
     # Trim server-computed properties from the schema we send to the model.
     _strip = {
         "Analysis": {
-            "optimal_decision", "optimal_expected_value", "nash_equilibria",
+            "optimal_decision", "optimal_expected_value",
+            "optimal_certainty_equivalent", "risk_aversion", "nash_equilibria",
             "dominated_strategies", "pareto_efficient", "game_notes", "warnings",
         },
-        "TreeNode": {"expected_value", "is_optimal"},
+        "TreeNode": {"expected_value", "certainty_equivalent", "is_optimal"},
     }
     for defname, props in _strip.items():
         target = schema.get("$defs", {}).get(defname, schema) if defname != "Analysis" else schema
