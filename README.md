@@ -23,6 +23,18 @@ optional OpenAI provider.
   game, the model produces a normal-form payoff matrix and the server computes the
   equilibria: **pure-strategy** NE for any nxm game plus the **mixed-strategy** NE for
   2x2 games. Equilibrium cells are highlighted in the matrix.
+- **Dominance & Pareto efficiency** — an equilibrium tells you a cell is stable but not
+  *why*. Dominated strategies are struck through in the matrix ("never play this, and
+  here's what beats it"), Pareto-efficient cells are outlined, and when the equilibrium
+  is *not* Pareto efficient the app says so in plain language — the Prisoner's Dilemma
+  insight, stated rather than left for you to spot.
+- **Risk preferences** — maximizing raw expected value assumes you are indifferent
+  between a coin-flip and its average. A slider runs from risk-seeking through neutral
+  to risk-averse, and the recommendation is re-derived on the **certainty equivalent**:
+  the guaranteed payoff worth the same as the gamble to you.
+- **Printable report** — one click produces a print/PDF version of the analysis, with
+  the controls stripped and a masthead recording the question, model, risk setting and
+  whether assumptions were adjusted.
 - **Interactive decision tree** — rendered in the browser with vis-network (color-coded
   node types, probability edge labels, per-node EV, optimal path). No server-side image
   generation, so `matplotlib`/`networkx`/`graphviz` are no longer needed.
@@ -43,14 +55,17 @@ app.py          FastAPI endpoints (/, /api/models, /api/analyze, /api/recompute)
 models.py       Pydantic schemas — single source of truth for the JSON contract
 prompts.py      System + analysis prompt
 providers.py    LLMProvider base + OllamaProvider + OpenAIProvider + model listing
-game_theory.py  Probability normalization, backward-induction EV, Nash equilibria
+game_theory.py  Probability normalization, backward-induction EV, risk preferences,
+                Nash equilibria, dominance, Pareto efficiency
 config.py       Settings (provider/model defaults, from .env)
 templates/
   index.html    Single-page UI (provider toggle, model dropdown, interactive tree,
-                payoff matrix, sensitivity analysis)
+                payoff matrix, sensitivity analysis, risk slider, print report)
 tests/
   test_game_theory.py   Decision-tree engine: normalization, repair, backward induction
   test_nash.py          Nash equilibria against classic games
+  test_dominance.py     Dominated strategies, Pareto efficiency, computed game notes
+  test_risk.py          Utility transform, certainty equivalents, risk-adjusted choice
 pytest.ini      Test configuration
 ```
 
@@ -153,9 +168,11 @@ Interactive docs at `http://localhost:8000/docs`.
 **GET** `/api/models` — installed (chat-capable) Ollama models + provider availability.
 
 **POST** `/api/recompute` — re-solve edited assumptions with no LLM call. Accepts
-`{"decision_tree": [...], "payoff_matrix": {...}}` and returns the same shape as
-`/api/analyze` with expected values, optimal path and Nash equilibria recomputed. This
-powers the sensitivity analysis.
+`{"decision_tree": [...], "payoff_matrix": {...}, "risk_aversion": 0.0}` and returns the
+same shape as `/api/analyze` with expected values, optimal path, certainty equivalents,
+equilibria, dominance and Pareto results recomputed. This powers the sensitivity
+analysis and the risk slider. `risk_aversion` runs from `-1` (risk-seeking) through `0`
+(risk-neutral, the default) to `1` (strongly risk-averse).
 
 **POST** `/api/analyze`
 ```json
@@ -188,7 +205,16 @@ Response (abridged):
   "nash_equilibria": [
     {"kind": "pure", "profile": "Price War / High Price", "row_payoff": 100, "col_payoff": 40, "description": "..."},
     {"kind": "mixed", "profile": "Chain A: 33% High Price / 67% Price War | ...", "row_mix": [0.33, 0.67], "col_mix": [0.33, 0.67]}
-  ]
+  ],
+  "dominated_strategies": [
+    {"player": "row", "player_name": "Chain A", "strategy": "High Price", "dominated_by": "Price War", "kind": "strict", "description": "..."}
+  ],
+  "pareto_efficient": [
+    {"row_strategy": "High Price", "col_strategy": "High Price", "row_payoff": 80, "col_payoff": 80}
+  ],
+  "game_notes": ["The equilibrium '...' is not Pareto efficient: both players do better at '...'"],
+  "risk_aversion": 0.0,
+  "optimal_certainty_equivalent": null
 }
 ```
 
@@ -206,6 +232,31 @@ branches. The server then walks the tree bottom-up (`game_theory.compute_expecte
 
 This yields a defensible expected value for every node and identifies the optimal
 strategy — independent of whatever the model "thinks" the best choice is.
+
+### Risk preferences (beyond expected value)
+
+Plain expected value is **risk-neutral**: a 50/50 of `+100` / `−100` scores identically
+to a certain `0`. Few people decide real stakes that way, so the sensitivity panel has a
+risk-appetite slider. With it off centre the engine also computes a **certainty
+equivalent** for every node — the guaranteed payoff you'd accept instead of that node's
+gamble — and decisions are resolved on *that* rather than on raw EV.
+
+The transform is exponential (constant absolute risk aversion) utility,
+`u(x) = 1 − e^(−x/R)`. CARA is what makes it usable inside backward induction: folding
+certainty equivalents up the tree gives the same answer as evaluating the whole compound
+lottery at once, so every node's number stays in payoff units and stays comparable to
+its EV. (`test_risk.py` pins that equivalence — the recursion is only valid for this
+utility family.)
+
+The slider is **dimensionless** on purpose. Payoffs are on an arbitrary per-analysis
+scale, so the server converts the setting into a risk-tolerance constant `R` sized to
+the payoff spread actually in play; the same slider position therefore means the same
+thing whatever scale the model invented. At full aversion `R` is half the spread.
+
+The headline EV is the expected value **of the path risk preference chose** — not an
+independently maximized one, which would describe a strategy the tool isn't
+recommending. The gap between the two is the *risk premium*: what you're paying for
+certainty.
 
 ### Node types in the tree
 - **Decision** (blue box) — a choice the actor controls
@@ -256,6 +307,33 @@ Battle of the Sexes (two pure + one mixed).
 **Scope:** the matrix and mixed-NE solver target two-player games (mixed NE specifically
 for 2x2). Pure-strategy NE works for any nxm matrix.
 
+### Dominance and Pareto efficiency
+
+An equilibrium says a cell is stable; it doesn't say *why*, or whether it's any good.
+Two further computations do (`find_dominated_strategies`, `find_pareto_efficient`):
+
+- **Dominated strategies** — a strategy no rational player should choose because another
+  always beats it. This is the actual mechanism behind the Prisoner's Dilemma: each
+  player's own arithmetic rules out cooperation, with no reasoning about the opponent
+  needed. **Strict** dominance (better against *every* opponent strategy) and **weak**
+  dominance (never worse, better somewhere) are reported separately, because "never worse
+  and sometimes better" is a softer argument and shouldn't be presented with the same
+  confidence. Dominated rows and columns are struck through in the matrix, labelled with
+  what beats them.
+- **Pareto-efficient cells** — outcomes where no player can be made better off without
+  making the other worse off. Outlined in amber.
+
+The contrast between the two is the most instructive output the tool produces. When the
+equilibrium is *not* Pareto efficient, the app states it directly, names the outcome both
+players would prefer, and notes that reaching it takes a binding agreement or repetition
+and trust:
+
+> The equilibrium 'Confess / Confess' (1, 1) is not Pareto efficient: both players do
+> better at 'Stay silent / Stay silent' (3, 3), but neither can move there alone.
+
+A player with one strategy that strictly beats all their others is also called out —
+their choice is settled before any strategic reasoning begins.
+
 ## Tests
 
 The deterministic engine (backward induction, Nash equilibria, tree repair) is covered
@@ -268,6 +346,8 @@ pytest                # run everything
 
 pytest tests/test_nash.py -v          # just the Nash equilibrium tests
 pytest tests/test_game_theory.py -v   # just the decision-tree engine
+pytest tests/test_dominance.py -v     # dominance, Pareto efficiency, game notes
+pytest tests/test_risk.py -v          # risk preferences and certainty equivalents
 pytest -k optimal_path -v             # run tests matching a name
 ```
 
@@ -281,6 +361,10 @@ pytest -k optimal_path -v             # run tests matching a name
 | **Tree repair** | Duplicate-id merging, dangling and self-reference removal, orphan subtree reattachment |
 | **Node-type inference** | Gamble-typed-as-decision reclassified (and proven to stop discarding downside), root keeps its type, childless nodes become outcomes, unweighted chance nodes flagged, clean trees produce no warnings |
 | **Normalization** | Outcome and sibling probabilities rescaled to sum to 1; all-zero falls back to equal weights |
+| **Dominance** | Prisoner's Dilemma strict dominance for both players, weak dominance flagged separately, ties are not dominance, strict dominator preferred over weak, no false positives in Matching Pennies, non-square matrices |
+| **Pareto efficiency** | PD equilibrium excluded, cells beaten on one side only excluded, all cells efficient in zero-sum, duplicate optima both kept |
+| **Game notes** | Dominant strategy named per player, inefficiency note names the mutually preferred outcome, no false claims when dominance is partial |
+| **Risk preferences** | CE below/above the mean when averse/seeking, certain outcomes worth face value, high tolerance converges on risk-neutral, no overflow at extreme payoff/tolerance ratios, tolerance scales with payoff spread, recommendation flips with appetite, nested lotteries fold consistently (the CARA property), stale CEs cleared on recompute |
 | **Integration** | `process_analysis` over a deliberately malformed tree |
 
 ### Manual API checks
@@ -326,8 +410,8 @@ curl -s -X POST localhost:8000/api/analyze -H 'Content-Type: application/json' \
 ## Roadmap
 
 Planned work, known limitations, and implementation notes live in
-[ROADMAP.md](ROADMAP.md) — next up is dominant/dominated strategies and Pareto
-efficiency in the payoff matrix.
+[ROADMAP.md](ROADMAP.md) — next up is multi-sample confidence (every probability is a
+single draw from a stochastic model) and staged progress feedback during long local runs.
 
 ## Production deployment
 

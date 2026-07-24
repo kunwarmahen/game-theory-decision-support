@@ -9,50 +9,20 @@ model for an answer we could calculate ourselves.
 
 ---
 
-## Tier 1 — high value, well understood
+## Tier 1 — done
 
-### 1. Dominant / dominated strategies + Pareto efficiency
-**Why:** Nash equilibria alone don't explain *why* a cell is stable. Strict dominance is
-what makes the Prisoner's Dilemma tragic, and Pareto-efficiency shows when an equilibrium
-is collectively bad (the whole point of that game). All cheap, deterministic, and it pairs
-naturally with the Nash work already done.
-
-**Sketch** (`game_theory.py`, alongside `compute_nash_equilibria`):
-- `find_dominant_strategies(matrix)` — a strategy strictly dominates if its payoff is
-  higher against *every* opponent strategy; weak dominance uses `>=` with one strict.
-- `find_pareto_efficient(matrix)` — a cell is Pareto-efficient if no other cell makes one
-  player better off without making the other worse off.
-- Add `dominant_strategies` / `pareto_efficient` to `Analysis`; strip from `llm_schema()`
-  like the other computed fields.
-- UI: badge dominated strategies in the matrix (e.g. strike-through row/column header),
-  outline Pareto-efficient cells, and note when the Nash equilibrium is *not* Pareto
-  efficient — that contrast is the most instructive output the tool could give.
-- Tests: Prisoner's Dilemma (Defect strictly dominates; NE is not Pareto efficient).
-
-**Effort:** small. Highest value-per-line remaining.
-
-### 2. Risk preferences (currently risk-neutral)
-**Why:** `compute_expected_values` maximizes raw expected value, i.e. assumes the user is
-risk-neutral. A 50/50 of +100/-100 and a certain 0 are treated as identical, which is not
-how most people decide real stakes.
-
-**Sketch:** apply a utility transform to leaf payoffs before backward induction — e.g.
-exponential utility `u(x) = (1 - e^(-x/R)) ` with a risk-tolerance `R`, or a simple
-risk-aversion slider mapping to concave utility. Expose `R` in the sensitivity panel so
-users can see the recommendation shift as risk appetite changes. Report the certainty
-equivalent next to the EV.
-
-**Effort:** small-medium. Pairs extremely well with the existing sensitivity UI.
-
-### 3. Export & shareable report
-**Why:** it is a decision-support tool; conclusions need to leave the browser.
-
-**Sketch:** a "Download report" button producing Markdown or a print-friendly HTML view
-(summary, matrix + equilibria, tree image, outcomes, and any adjusted assumptions with
-the deltas). Export the raw JSON too so an analysis can be re-imported into
-`/api/recompute`. Client-side only — no new dependencies.
-
-**Effort:** small-medium.
+1. **Dominant / dominated strategies + Pareto efficiency** — shipped. Strict and weak
+   dominance reported separately, Pareto-efficient cells computed, and a plain-language
+   note when the equilibrium is not Pareto efficient. See `find_dominated_strategies`,
+   `find_pareto_efficient`, `describe_game` and `tests/test_dominance.py`.
+2. **Risk preferences** — shipped. Exponential (CARA) utility with a dimensionless
+   slider scaled to the payoff spread, certainty equivalents on every node, decisions
+   resolved on the risk-adjusted value. See `compute_expected_values`,
+   `risk_tolerance_for` and `tests/test_risk.py`.
+3. **Export & shareable report** — shipped as a print/PDF view of the live DOM with a
+   provenance masthead. **Markdown and raw-JSON export were deliberately not built**; if
+   re-importing an analysis into `/api/recompute` turns out to matter, the JSON half is
+   the piece to add.
 
 ---
 
@@ -158,6 +128,21 @@ for the inline inputs), and a mobile layout check for the tree and matrix.
   edited values may shift from exactly what was typed.
 - **Mixed NE only for 2x2**, and only interior equilibria (`0 < p < 1`); degenerate cases
   return no mixed equilibrium.
+- **Dominance is single-round.** Strategies dominated only *after* another dominated
+  strategy is removed are not found; iterated elimination (IESDS) was considered and
+  deferred, since it needs its own UI to show the rounds. Reported findings are capped at
+  one per dominated strategy — the useful conclusion is "never play this", not every
+  route to it.
+- **Risk preference applies to the decision tree only.** Nash equilibria are computed on
+  raw matrix payoffs, per the usual convention that those are already utilities. A
+  monotonic risk transform would rarely move a pure NE anyway, but it *would* shift mixed
+  equilibrium probabilities — which is exactly why applying it there would mislead.
+- **The risk slider's curvature (`_RISK_CURVATURE`) is a judgement call**, not a measured
+  preference. It sets how sharply aversion bites at full deflection; it is tuned so the
+  whole slider is useful rather than to any particular decision-theoretic standard.
+- **The printed report is the live DOM.** That guarantees it matches the screen, but it
+  also means print fidelity depends on the browser: the decision tree prints as the
+  canvas was drawn, so a large tree may print small.
 - **Thinking mode is disabled** for Ollama (`think: false`) because thinking models spent
   their token budget reasoning and returned empty content. If a future model reasons
   better with it on, this is worth revisiting.
